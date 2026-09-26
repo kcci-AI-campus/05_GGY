@@ -17,7 +17,7 @@ class BoxVideoChecker:
         check_seconds=3,
         detect_frame_count=5,
         frame_interval=3,
-        damage_confidence_threshold=0.5
+        damage_confidence_threshold=0.4
     ):
 
         self.box_class_id = box_class_id
@@ -42,7 +42,7 @@ class BoxVideoChecker:
 
         self.damage_model = DamageDetector(
             model_path="damage_detect_float32.tflite",
-            damaged_class_id=1,
+            damaged_class_id=0,
             confidence_threshold=damage_confidence_threshold
         )
 
