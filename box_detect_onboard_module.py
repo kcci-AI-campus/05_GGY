@@ -11,7 +11,7 @@ import tflite_runtime.interpreter as tflite
 
 MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "box_11_320.tflite"
+    "box_26_320.tflite"
 )
 
 # MODEL_PATH = os.path.join(
