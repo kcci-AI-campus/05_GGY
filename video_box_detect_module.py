@@ -261,80 +261,80 @@ def check(self, video_path):
     # 영상 삭제
     # ======================================================
 
-    def delete_video(
-        self,
+def delete_video(
+    self,
+    video_path
+):
+
+    if os.path.exists(
         video_path
     ):
 
-        if os.path.exists(
+        os.remove(
             video_path
-        ):
-
-            os.remove(
-                video_path
-            )
-
-            print(
-                f"Video deleted: {video_path}"
-            )
-
-            return True
-
+        )
 
         print(
-            f"Video not found: {video_path}"
+            f"Video deleted: {video_path}"
         )
 
-        return False
+        return True
 
 
-    # ======================================================
-    # Box 검사 + 삭제
-    # ======================================================
+    print(
+        f"Video not found: {video_path}"
+    )
 
-    def check_and_delete(
-        self,
+    return False
+
+
+# ======================================================
+# Box 검사 + 삭제
+# ======================================================
+
+def check_and_delete(
+    self,
+    video_path
+):
+
+    result = self.check(
         video_path
-    ):
+    )
 
-        result = self.check(
+
+    # ==================================================
+    # Box 있음
+    # ==================================================
+
+    if result["detected"]:
+
+        print(
+            "Box exists."
+        )
+
+        print(
+            "Video will be kept."
+        )
+
+        return result
+
+
+    # ==================================================
+    # Box 없음
+    # ==================================================
+
+    else:
+
+        print(
+            "Box does not exist."
+        )
+
+        print(
+            "Deleting video..."
+        )
+
+        self.delete_video(
             video_path
         )
 
-
-        # ==================================================
-        # Box 있음
-        # ==================================================
-
-        if result["detected"]:
-
-            print(
-                "Box exists."
-            )
-
-            print(
-                "Video will be kept."
-            )
-
-            return result
-
-
-        # ==================================================
-        # Box 없음
-        # ==================================================
-
-        else:
-
-            print(
-                "Box does not exist."
-            )
-
-            print(
-                "Deleting video..."
-            )
-
-            self.delete_video(
-                video_path
-            )
-
-            return result
+        return result
