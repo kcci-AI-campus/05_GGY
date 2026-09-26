@@ -17,12 +17,12 @@ cap = cv2.VideoCapture(0)
 
 cap.set(
     cv2.CAP_PROP_FRAME_WIDTH,
-    320
+    640
 )
 
 cap.set(
     cv2.CAP_PROP_FRAME_HEIGHT,
-    240
+    480
 )
 
 cap.set(
@@ -48,8 +48,8 @@ cap.set(
 recorder = MotionRecorder(
     cap=cap,
 
-    camera_width=320,
-    camera_height=240,
+    camera_width=640,
+    camera_height=480,
 
     fps=15,
 
@@ -365,10 +365,10 @@ try:
         # 따라서 프로그램에서 320×240으로 resize
         # --------------------------------------------------
 
-        frame = cv2.resize(
-            frame,
-            (320, 240)
-        )
+        # frame = cv2.resize(
+        #     frame,
+        #     (320, 240)
+        # )
 
         # --------------------------------------------------
         # 3. Motion Detection
