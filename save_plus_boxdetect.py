@@ -1447,24 +1447,24 @@ try:
         # 검출된 Box 개수 표시
         # ==================================================
 
-        if current_boxes:
+        # if current_boxes:
 
-            cv2.putText(
+        #     cv2.putText(
 
-                frame,
+        #         frame,
 
-                f"Boxes: {len(current_boxes)}",
+        #         f"Boxes: {len(current_boxes)}",
 
-                (10, 25),
+        #         (10, 25),
 
-                cv2.FONT_HERSHEY_SIMPLEX,
+        #         cv2.FONT_HERSHEY_SIMPLEX,
 
-                0.55,
+        #         0.55,
 
-                (255, 255, 255),
+        #         (255, 255, 255),
 
-                2
-            )
+        #         2
+        #     )
 
 
         # ==================================================
