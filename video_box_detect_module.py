@@ -41,6 +41,10 @@ def check(self, video_path):
     print("\n[Box Check]")
     print(f"Video: {video_path}")
 
+    # --------------------------------------------------
+    # 영상 열기
+    # --------------------------------------------------
+
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -78,16 +82,27 @@ def check(self, video_path):
     duration = frame_count / fps
 
     # --------------------------------------------------
-    # 마지막 check_seconds초 검사
+    # 검사 시간 설정
     # --------------------------------------------------
+
+    # 영상이 3초보다 길면 마지막 3초
+    # 영상이 3초보다 짧으면 영상 전체
+    check_duration = min(
+        self.check_seconds,
+        duration
+    )
 
     start_time = max(
         0,
-        duration - self.check_seconds
+        duration - check_duration
     )
 
     print(
         f"Video duration : {duration:.2f} sec"
+    )
+
+    print(
+        f"Check duration : {check_duration:.2f} sec"
     )
 
     print(
@@ -98,13 +113,17 @@ def check(self, video_path):
         f"Checking to    : {duration:.2f} sec"
     )
 
+    # --------------------------------------------------
+    # 검사 시작 위치
+    # --------------------------------------------------
+
     cap.set(
         cv2.CAP_PROP_POS_MSEC,
         start_time * 1000
     )
 
     # --------------------------------------------------
-    # 80% 이상 검출 조건
+    # 검출 관련 변수
     # --------------------------------------------------
 
     detection_ratio = 0.8
@@ -187,7 +206,7 @@ def check(self, video_path):
                 detected_frames += 1
 
         # ==================================================
-        # 최종 검출 비율 계산
+        # 검사 결과 계산
         # ==================================================
 
         if total_frames == 0:
@@ -218,7 +237,7 @@ def check(self, video_path):
         )
 
         # ==================================================
-        # 80% 이상이면 Box 존재
+        # 80% 이상 검출
         # ==================================================
 
         if detection_rate >= detection_ratio:
@@ -226,7 +245,7 @@ def check(self, video_path):
             print("Box detected!")
 
             print(
-                f"BBox : {last_bbox}"
+                f"BBox       : {last_bbox}"
             )
 
             print(
@@ -255,7 +274,6 @@ def check(self, video_path):
     finally:
 
         cap.release()
-
 
     # ======================================================
     # 영상 삭제
