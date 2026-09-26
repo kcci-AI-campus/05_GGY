@@ -1,7 +1,7 @@
 # video_box_detect_module.py
-
 import cv2
 import os
+import time
 
 from box_detect_onboard_module import BoxDetector
 from damage_detect_module import DamageDetector
@@ -63,6 +63,20 @@ class BoxVideoChecker:
             damaged_class_id=1,
             confidence_threshold=damage_confidence_threshold
         )
+
+        # --------------------------------------------------
+        # 파손 탐지 시간 측정
+        #
+        # damage_inference_times
+        #   → 파손 모델 자체의 순수 추론시간
+        #
+        # box_to_damage_times
+        #   → Box 검출 확정부터 파손 판정 완료까지
+        # --------------------------------------------------
+
+        self.damage_inference_times = []
+
+        self.box_to_damage_times = []
 
 
     # ======================================================
@@ -243,6 +257,8 @@ class BoxVideoChecker:
 
         detected_frames = 0
 
+        box_to_damage_start = None
+
         # 마지막으로 Box가 검출된 정보
         last_bbox = None
         last_confidence = 0.0
@@ -401,6 +417,16 @@ class BoxVideoChecker:
                         "[YOLO] Required "
                         "detection count reached."
                     )
+
+                    # --------------------------------------------------
+                    # Box 검출 확정
+                    #
+                    # 이 시점부터
+                    # Box → Damage 처리 시간을 측정
+                    # --------------------------------------------------
+
+                    box_to_damage_start = \
+                        time.perf_counter()
 
                     break
 
@@ -587,15 +613,58 @@ class BoxVideoChecker:
         # ======================================================
         # Damage Model 추론
         # ======================================================
-
         print(
             "\n[Damage Check]"
         )
+
+        # ==================================================
+        # 파손 모델 순수 추론시간 측정 시작
+        # ==================================================
+
+        damage_inference_start = \
+            time.perf_counter()
+
 
         damage_result = \
             self.damage_model(
                 cropped_box
             )
+
+
+        # ==================================================
+        # 파손 모델 순수 추론시간 측정 종료
+        # ==================================================
+
+        damage_inference_end = \
+            time.perf_counter()
+
+
+        damage_inference_time = (
+            damage_inference_end
+            -
+            damage_inference_start
+        )
+
+
+        damage_inference_time_ms = (
+            damage_inference_time
+            * 1000
+        )
+
+
+        # --------------------------------------------------
+        # 파손 모델 추론시간 저장
+        # --------------------------------------------------
+
+        self.damage_inference_times.append(
+            damage_inference_time_ms
+        )
+
+
+        print(
+            f"Damage inference time : "
+            f"{damage_inference_time_ms:.2f} ms"
+        )
 
         print(
             f"Damaged    : "
@@ -611,6 +680,39 @@ class BoxVideoChecker:
             f"Class ID   : "
             f"{damage_result['class_id']}"
         )
+
+        # ==================================================
+        # Box → Damage 전체 처리시간
+        # ==================================================
+
+        if box_to_damage_start is not None:
+
+            box_to_damage_end = \
+                time.perf_counter()
+
+
+            box_to_damage_time = (
+                box_to_damage_end
+                -
+                box_to_damage_start
+            )
+
+
+            box_to_damage_time_ms = (
+                box_to_damage_time
+                * 1000
+            )
+
+
+            self.box_to_damage_times.append(
+                box_to_damage_time_ms
+            )
+
+
+            print(
+                f"Box → Damage time : "
+                f"{box_to_damage_time_ms:.2f} ms"
+            )
 
         # ======================================================
         # 최종 결과
@@ -733,3 +835,98 @@ class BoxVideoChecker:
             )
 
             return result
+
+    # ======================================================
+    # Damage 추론 시간 통계
+    # ======================================================
+
+    def get_damage_timing_summary(self):
+
+        # --------------------------------------------------
+        # 데이터가 없는 경우
+        # --------------------------------------------------
+
+        if not self.damage_inference_times:
+
+            return {
+                "count": 0,
+                "average_ms": None,
+                "min_ms": None,
+                "max_ms": None,
+                "box_to_damage_average_ms": None,
+                "box_to_damage_min_ms": None,
+                "box_to_damage_max_ms": None
+            }
+
+
+        # --------------------------------------------------
+        # Damage 모델 순수 추론
+        # --------------------------------------------------
+
+        damage_average = (
+            sum(self.damage_inference_times)
+            /
+            len(self.damage_inference_times)
+        )
+
+
+        damage_min = min(
+            self.damage_inference_times
+        )
+
+
+        damage_max = max(
+            self.damage_inference_times
+        )
+
+
+        # --------------------------------------------------
+        # Box → Damage 전체 시간
+        # --------------------------------------------------
+
+        if self.box_to_damage_times:
+
+            box_to_damage_average = (
+                sum(self.box_to_damage_times)
+                /
+                len(self.box_to_damage_times)
+            )
+
+            box_to_damage_min = min(
+                self.box_to_damage_times
+            )
+
+            box_to_damage_max = max(
+                self.box_to_damage_times
+            )
+
+        else:
+
+            box_to_damage_average = None
+            box_to_damage_min = None
+            box_to_damage_max = None
+
+
+        return {
+
+            "count":
+                len(self.damage_inference_times),
+
+            "average_ms":
+                damage_average,
+
+            "min_ms":
+                damage_min,
+
+            "max_ms":
+                damage_max,
+
+            "box_to_damage_average_ms":
+                box_to_damage_average,
+
+            "box_to_damage_min_ms":
+                box_to_damage_min,
+
+            "box_to_damage_max_ms":
+                box_to_damage_max
+        }

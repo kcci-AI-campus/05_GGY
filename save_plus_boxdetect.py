@@ -805,10 +805,6 @@ def box_check_worker():
     )
 
 
-    # ------------------------------------------------------
-    # BoxVideoChecker 생성
-    # ------------------------------------------------------
-
     box_checker = BoxVideoChecker(
 
         box_class_id=0,
@@ -816,10 +812,6 @@ def box_check_worker():
         confidence_threshold=0.4,
 
         check_seconds=3,
-
-        # ----------------------------------------------
-        # 마지막부터 3프레임마다 YOLO 실행
-        # ----------------------------------------------
 
         detect_frame_count=5,
 
@@ -831,16 +823,8 @@ def box_check_worker():
 
     while True:
 
-        # --------------------------------------------------
-        # 저장 완료된 영상 기다림
-        # --------------------------------------------------
-
         video_path = box_check_queue.get()
 
-
-        # --------------------------------------------------
-        # None이면 Thread 종료
-        # --------------------------------------------------
 
         if video_path is None:
 
@@ -866,10 +850,6 @@ def box_check_worker():
         )
 
 
-        # ==================================================
-        # 추론 시작
-        # ==================================================
-
         inference_active = True
 
 
@@ -879,20 +859,13 @@ def box_check_worker():
 
         try:
 
-            # ==================================================
-            # 영상 검사
-            # ==================================================
-
-            result = box_checker.check_and_delete(
-                video_path
-            )
+            result = \
+                box_checker.check_and_delete(
+                    video_path
+                )
 
 
         finally:
-
-            # ==================================================
-            # 추론 종료
-            # ==================================================
 
             inference_end_time = \
                 time.time()
@@ -916,9 +889,9 @@ def box_check_worker():
             )
 
 
-        # ==================================================
-        # 결과 출력
-        # ==================================================
+        # ----------------------------------------------
+        # 기존 결과 처리
+        # ----------------------------------------------
 
         if result["detected"]:
 
@@ -939,11 +912,6 @@ def box_check_worker():
                 f"{result['confidence']:.2f}"
             )
 
-
-            # --------------------------------------------------
-            # Damage 결과
-            # --------------------------------------------------
-
             print(
                 f"Damaged: "
                 f"{result['damaged']}"
@@ -959,28 +927,9 @@ def box_check_worker():
                 f"{result['damage_class_id']}"
             )
 
-
-            # --------------------------------------------------
-            # 최종 상태
-            # --------------------------------------------------
-
-            if result["damaged"]:
-
-                print(
-                    "Final status: DAMAGED BOX"
-                )
-
-            else:
-
-                print(
-                    "Final status: NORMAL BOX"
-                )
-
-
             print(
                 "================================"
             )
-
 
         else:
 
@@ -997,20 +946,95 @@ def box_check_worker():
             )
 
 
-        # ==================================================
-        # 결과를 Main Thread로 전달
-        # ==================================================
-
         box_result_queue.put(
             result
         )
 
 
-        # --------------------------------------------------
-        # Queue 작업 완료
-        # --------------------------------------------------
-
         box_check_queue.task_done()
+
+
+    # ======================================================
+    # Box Thread 종료 직전
+    # Damage Timing 최종 통계
+    # ======================================================
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "       Damage Detection Timing Summary"
+    )
+
+    print(
+        "=" * 70
+    )
+
+
+    damage_timing = \
+        box_checker.get_damage_timing_summary()
+
+
+    if damage_timing["count"] > 0:
+
+        print(
+            f"\n측정 횟수 : "
+            f"{damage_timing['count']}"
+        )
+
+
+        print(
+            "\n[Damage Model 자체 추론시간]"
+        )
+
+        print(
+            f"  평균 : "
+            f"{damage_timing['average_ms']:.2f} ms"
+        )
+
+        print(
+            f"  최소 : "
+            f"{damage_timing['min_ms']:.2f} ms"
+        )
+
+        print(
+            f"  최대 : "
+            f"{damage_timing['max_ms']:.2f} ms"
+        )
+
+
+        print(
+            "\n[Box → Damage 전체 처리시간]"
+        )
+
+        print(
+            f"  평균 : "
+            f"{damage_timing['box_to_damage_average_ms']:.2f} ms"
+        )
+
+        print(
+            f"  최소 : "
+            f"{damage_timing['box_to_damage_min_ms']:.2f} ms"
+        )
+
+        print(
+            f"  최대 : "
+            f"{damage_timing['box_to_damage_max_ms']:.2f} ms"
+        )
+
+    else:
+
+        print(
+            "\n파손 모델 추론 데이터가 없습니다."
+        )
+
+
+    print(
+        "\n"
+        + "=" * 70
+    )
 
 
 # ==========================================================
@@ -1441,6 +1465,87 @@ finally:
     box_thread.join(
         timeout=5
     )
+
+    # # ======================================================
+    # # Damage Inference Timing Summary
+    # # ======================================================
+
+    # print(
+    #     "\n"
+    #     + "=" * 70
+    # )
+
+    # print(
+    #     "       Damage Detection Timing Summary"
+    # )
+
+    # print(
+    #     "=" * 70
+    # )
+
+
+    # damage_timing = \
+    #     box_checker.get_damage_timing_summary()
+
+
+    # if damage_timing["count"] > 0:
+
+    #     print(
+    #         f"\n측정 횟수 : "
+    #         f"{damage_timing['count']}"
+    #     )
+
+
+    #     print(
+    #         "\n[Damage Model 자체 추론시간]"
+    #     )
+
+    #     print(
+    #         f"  평균 : "
+    #         f"{damage_timing['average_ms']:.2f} ms"
+    #     )
+
+    #     print(
+    #         f"  최소 : "
+    #         f"{damage_timing['min_ms']:.2f} ms"
+    #     )
+
+    #     print(
+    #         f"  최대 : "
+    #         f"{damage_timing['max_ms']:.2f} ms"
+    #     )
+
+
+    #     print(
+    #         "\n[Box → Damage 전체 처리시간]"
+    #     )
+
+    #     print(
+    #         f"  평균 : "
+    #         f"{damage_timing['box_to_damage_average_ms']:.2f} ms"
+    #     )
+
+    #     print(
+    #         f"  최소 : "
+    #         f"{damage_timing['box_to_damage_min_ms']:.2f} ms"
+    #     )
+
+    #     print(
+    #         f"  최대 : "
+    #         f"{damage_timing['box_to_damage_max_ms']:.2f} ms"
+    #     )
+
+    # else:
+
+    #     print(
+    #         "\n파손 모델 추론 데이터가 없습니다."
+    #     )
+
+
+    # print(
+    #     "\n"
+    #     + "=" * 70
+    # )
 
 
     # ------------------------------------------------------
