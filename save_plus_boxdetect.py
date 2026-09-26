@@ -16,7 +16,6 @@ from video_box_detect_module import BoxVideoChecker
 
 cap = cv2.VideoCapture(0)
 
-
 cap.set(
     cv2.CAP_PROP_FRAME_WIDTH,
     320
@@ -107,6 +106,10 @@ current_bbox = None
 
 current_confidence = 0.0
 
+current_damaged = False
+
+current_damage_confidence = 0.0
+
 
 # ==========================================================
 # Box Check Worker
@@ -118,11 +121,10 @@ def box_check_worker():
         "[Box Thread] 시작"
     )
 
-
     # ------------------------------------------------------
     # BoxVideoChecker 생성
     #
-    # YOLO 모델은 이 Thread 안에서만 사용
+    # YOLO + Damage 모델은 이 Thread 안에서 사용
     # ------------------------------------------------------
 
     box_checker = BoxVideoChecker(
@@ -131,7 +133,9 @@ def box_check_worker():
 
         confidence_threshold=0.4,
 
-        check_seconds=3
+        check_seconds=3,
+
+        damage_confidence_threshold=0.5
     )
 
 
@@ -203,6 +207,41 @@ def box_check_worker():
                 f"Confidence: "
                 f"{result['confidence']:.2f}"
             )
+
+            # --------------------------------------------------
+            # Damage 결과
+            # --------------------------------------------------
+
+            print(
+                f"Damaged: "
+                f"{result['damaged']}"
+            )
+
+            print(
+                f"Damage confidence: "
+                f"{result['damage_confidence']:.2f}"
+            )
+
+            print(
+                f"Damage class ID: "
+                f"{result['damage_class_id']}"
+            )
+
+            # --------------------------------------------------
+            # 최종 상태
+            # --------------------------------------------------
+
+            if result["damaged"]:
+
+                print(
+                    "Final status: DAMAGED BOX"
+                )
+
+            else:
+
+                print(
+                    "Final status: NORMAL BOX"
+                )
 
             print(
                 "================================"
@@ -380,13 +419,13 @@ try:
 
 
         # ==================================================
-        # 4. Box 검사 결과 확인
+        # 4. Box + Damage 검사 결과 확인
         # ==================================================
         #
         # Box Thread가 비동기로 검사하기 때문에
         # 결과가 있을 때만 가져온다.
         #
-        # YOLO 추론은 여기서 실행하지 않는다.
+        # YOLO / Damage 추론은 여기서 실행하지 않는다.
         #
         # ==================================================
 
@@ -408,6 +447,12 @@ try:
                     current_confidence = \
                         result["confidence"]
 
+                    current_damaged = \
+                        result["damaged"]
+
+                    current_damage_confidence = \
+                        result["damage_confidence"]
+
 
                 # ------------------------------------------
                 # Box가 검출되지 않은 경우
@@ -418,6 +463,10 @@ try:
                     current_bbox = None
 
                     current_confidence = 0.0
+
+                    current_damaged = False
+
+                    current_damage_confidence = 0.0
 
 
                 box_result_queue.task_done()
@@ -457,10 +506,10 @@ try:
 
 
             # --------------------------------------------------
-            # Confidence
+            # Box Confidence
             # --------------------------------------------------
 
-            label = (
+            box_label = (
 
                 f"BOX "
 
@@ -469,158 +518,3 @@ try:
 
 
             cv2.putText(
-
-                frame,
-
-                label,
-
-                (
-                    x1,
-                    max(y1 - 8, 15)
-                ),
-
-                cv2.FONT_HERSHEY_SIMPLEX,
-
-                0.5,
-
-                (255, 0, 0),
-
-                2
-            )
-
-
-        # ==================================================
-        # 6. Recorder 상태 표시
-        # ==================================================
-
-        frame = recorder.draw_status(
-            frame
-        )
-
-
-        # ==================================================
-        # 7. FPS 표시
-        # ==================================================
-
-        cv2.putText(
-
-            frame,
-
-            f"FPS: {display_fps:.1f}",
-
-            (10, 225),
-
-            cv2.FONT_HERSHEY_SIMPLEX,
-
-            0.55,
-
-            (255, 255, 255),
-
-            2
-        )
-
-
-        # ==================================================
-        # 8. 화면 출력
-        # ==================================================
-
-        cv2.imshow(
-            "cam",
-            frame
-        )
-
-
-        # ==================================================
-        # 9. 저장 완료된 영상 확인
-        # ==================================================
-
-        if video_path is not None:
-
-            print(
-                "\n[Main Thread]"
-            )
-
-            print(
-                "영상 저장 완료"
-            )
-
-            print(
-                f"Video: {video_path}"
-            )
-
-            print(
-                "Box 검사 Thread로 전달"
-            )
-
-
-            # --------------------------------------------------
-            # 영상 경로만 Box Thread로 전달
-            # --------------------------------------------------
-
-            box_check_queue.put(
-                video_path
-            )
-
-
-        # ==================================================
-        # 10. 키 입력
-        # ==================================================
-
-        key = cv2.waitKey(1) & 0xFF
-
-
-        if key == ord("s"):
-
-            print(
-                "\n'S' pressed."
-            )
-
-            break
-
-
-# ==========================================================
-# 프로그램 종료
-# ==========================================================
-
-finally:
-
-    print(
-        "\n프로그램 종료 중..."
-    )
-
-
-    # ------------------------------------------------------
-    # MotionRecorder 종료
-    # ------------------------------------------------------
-
-    recorder.release()
-
-
-    # ------------------------------------------------------
-    # Box Thread 종료
-    # ------------------------------------------------------
-
-    box_check_queue.put(
-        None
-    )
-
-
-    # ------------------------------------------------------
-    # Box Thread 종료 대기
-    # ------------------------------------------------------
-
-    box_thread.join(
-        timeout=5
-    )
-
-
-    # ------------------------------------------------------
-    # OpenCV 종료
-    # ------------------------------------------------------
-
-    cv2.destroyAllWindows()
-
-
-    print(
-        "Camera stopped."
-    )
