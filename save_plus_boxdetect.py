@@ -573,7 +573,7 @@ try:
 
                 (
                     x1,
-                    min(y2 + 18, 235)
+                    min(y2 + 32, 470)
                 ),
 
                 cv2.FONT_HERSHEY_SIMPLEX,
@@ -607,7 +607,7 @@ try:
 
             f"FPS: {display_fps:.1f}",
 
-            (10, 225),
+            (10, 470),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
