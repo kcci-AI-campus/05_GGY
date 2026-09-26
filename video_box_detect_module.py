@@ -1,355 +1,165 @@
-# video_box_detect_module.py
+def check(self, video_path):
 
-import cv2
-import os
+    print("\n[Box Check]")
+    print(f"Video: {video_path}")
 
-from box_detect_onboard_module import BoxDetector
+    cap = cv2.VideoCapture(video_path)
 
+    if not cap.isOpened():
+        return {
+            "detected": False,
+            "bbox": None,
+            "confidence": 0.0
+        }
 
-class BoxVideoChecker:
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = int(
+        cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    )
 
-    def __init__(
-        self,
-        box_class_id=0,
-        confidence_threshold=0.4,
-        check_seconds=3
-    ):
+    if fps <= 0:
+        cap.release()
 
-        self.box_class_id = box_class_id
+        return {
+            "detected": False,
+            "bbox": None,
+            "confidence": 0.0
+        }
 
-        self.confidence_threshold = \
-            confidence_threshold
+    duration = frame_count / fps
 
-        self.check_seconds = check_seconds
+    # 마지막 3초 검사
+    start_time = max(
+        0,
+        duration - self.check_seconds
+    )
 
-        # --------------------------------------------------
-        # Box Detector
-        # --------------------------------------------------
+    cap.set(
+        cv2.CAP_PROP_POS_MSEC,
+        start_time * 1000
+    )
 
-        self.model = BoxDetector(
-            confidence_threshold=self.confidence_threshold,
-            class_id=self.box_class_id
-        )
+    # --------------------------------------------------
+    # 1초 판단을 위한 변수
+    # --------------------------------------------------
 
+    required_seconds = 1.0
 
-    # ======================================================
-    # 영상에서 Box 검사
-    # ======================================================
+    required_frames = int(
+        fps * required_seconds
+    )
 
-    def check(self, video_path):
+    detected_frames = 0
 
-        print("\n[Box Check]")
+    last_bbox = None
+    last_confidence = 0.0
 
-        print(
-            f"Video: {video_path}"
-        )
+    # 80% 이상 검출되면 Box 존재
+    detection_ratio = 0.8
 
+    try:
 
-        # --------------------------------------------------
-        # 영상 열기
-        # --------------------------------------------------
+        while True:
 
-        cap = cv2.VideoCapture(
-            video_path
-        )
+            ret, frame = cap.read()
 
+            if not ret:
+                break
 
-        if not cap.isOpened():
+            results = self.model(frame)
 
-            print(
-                f"영상 열기 실패: {video_path}"
-            )
+            box_detected = False
 
-            return {
-                "detected": False,
-                "bbox": None,
-                "confidence": 0.0
-            }
+            for detection in results:
 
+                x1 = int(detection[0])
+                y1 = int(detection[1])
+                x2 = int(detection[2])
+                y2 = int(detection[3])
 
-        # --------------------------------------------------
-        # 영상 정보
-        # --------------------------------------------------
-
-        fps = cap.get(
-            cv2.CAP_PROP_FPS
-        )
-
-        frame_count = int(
-            cap.get(
-                cv2.CAP_PROP_FRAME_COUNT
-            )
-        )
-
-
-        if fps <= 0:
-
-            print(
-                "영상 FPS를 가져올 수 없습니다."
-            )
-
-            cap.release()
-
-            return {
-                "detected": False,
-                "bbox": None,
-                "confidence": 0.0
-            }
-
-
-        duration = frame_count / fps
-
-
-        # --------------------------------------------------
-        # 마지막 check_seconds초만 검사
-        # --------------------------------------------------
-
-        start_time = max(
-            0,
-            duration - self.check_seconds
-        )
-
-
-        print(
-            f"Video duration : {duration:.2f} sec"
-        )
-
-        print(
-            f"Checking from  : {start_time:.2f} sec"
-        )
-
-        print(
-            f"Checking to    : {duration:.2f} sec"
-        )
-
-
-        # --------------------------------------------------
-        # 검사 시작 위치
-        # --------------------------------------------------
-
-        cap.set(
-            cv2.CAP_PROP_POS_MSEC,
-            start_time * 1000
-        )
-
-
-        try:
-
-            while True:
-
-                ret, frame = cap.read()
-
-
-                if not ret:
-
-                    break
-
-
-                # ==================================================
-                # YOLO 추론
-                # ==================================================
-
-                results = self.model(
-                    frame
+                confidence = float(
+                    detection[4]
                 )
 
+                class_id = int(
+                    detection[5]
+                )
 
-                # ==================================================
-                # Detection 결과 확인
-                # ==================================================
+                if class_id != self.box_class_id:
+                    continue
 
-                for detection in results:
+                if confidence < self.confidence_threshold:
+                    continue
 
-                    # ------------------------------------------
-                    # Bounding Box
-                    # ------------------------------------------
+                # Box 검출
+                box_detected = True
 
-                    x1 = int(
-                        detection[0]
-                    )
+                last_bbox = (
+                    x1,
+                    y1,
+                    x2,
+                    y2
+                )
 
-                    y1 = int(
-                        detection[1]
-                    )
+                last_confidence = confidence
 
-                    x2 = int(
-                        detection[2]
-                    )
+                break
 
-                    y2 = int(
-                        detection[3]
-                    )
+            # --------------------------------------------------
+            # 현재 프레임에서 Box 검출 여부
+            # --------------------------------------------------
 
+            if box_detected:
 
-                    # ------------------------------------------
-                    # Confidence
-                    # ------------------------------------------
+                detected_frames += 1
 
-                    confidence = float(
-                        detection[4]
-                    )
+            # --------------------------------------------------
+            # 1초 분량 프레임이 모였으면 판단
+            # --------------------------------------------------
 
+            if detected_frames >= int(
+                required_frames * detection_ratio
+            ):
 
-                    # ------------------------------------------
-                    # Class ID
-                    # ------------------------------------------
+                print("Box detected!")
 
-                    class_id = int(
-                        detection[5]
-                    )
+                print(
+                    f"Detected frames : "
+                    f"{detected_frames}"
+                )
 
+                print(
+                    f"Required frames : "
+                    f"{required_frames}"
+                )
 
-                    # ------------------------------------------
-                    # Box class 확인
-                    # ------------------------------------------
+                print(
+                    f"BBox : {last_bbox}"
+                )
 
-                    if class_id != self.box_class_id:
+                print(
+                    f"Confidence : "
+                    f"{last_confidence:.2f}"
+                )
 
-                        continue
+                return {
+                    "detected": True,
+                    "bbox": last_bbox,
+                    "confidence": last_confidence
+                }
 
+        # --------------------------------------------------
+        # 검사 종료
+        # --------------------------------------------------
 
-                    # ------------------------------------------
-                    # Confidence 확인
-                    # ------------------------------------------
+        print("Box not detected.")
 
-                    if confidence < self.confidence_threshold:
+        return {
+            "detected": False,
+            "bbox": None,
+            "confidence": 0.0
+        }
 
-                        continue
+    finally:
 
-
-                    # ==================================================
-                    # Box 검출
-                    # ==================================================
-
-                    print(
-                        "Box detected!"
-                    )
-
-                    print(
-                        f"confidence : {confidence:.2f}"
-                    )
-
-                    print(
-                        f"bbox       : "
-                        f"({x1}, {y1}, {x2}, {y2})"
-                    )
-
-
-                    # --------------------------------------------------
-                    # Main으로 전달할 결과
-                    # --------------------------------------------------
-
-                    return {
-                        "detected": True,
-                        "bbox": (
-                            x1,
-                            y1,
-                            x2,
-                            y2
-                        ),
-                        "confidence": confidence
-                    }
-
-
-            # ==================================================
-            # Box 없음
-            # ==================================================
-
-            print(
-                "Box not detected."
-            )
-
-
-            return {
-                "detected": False,
-                "bbox": None,
-                "confidence": 0.0
-            }
-
-
-        finally:
-
-            cap.release()
-
-
-    # ======================================================
-    # 영상 삭제
-    # ======================================================
-
-    def delete_video(
-        self,
-        video_path
-    ):
-
-        if os.path.exists(
-            video_path
-        ):
-
-            os.remove(
-                video_path
-            )
-
-            print(
-                f"Video deleted: {video_path}"
-            )
-
-            return True
-
-
-        print(
-            f"Video not found: {video_path}"
-        )
-
-        return False
-
-
-    # ======================================================
-    # Box 검사 + 삭제
-    # ======================================================
-
-    def check_and_delete(
-        self,
-        video_path
-    ):
-
-        result = self.check(
-            video_path
-        )
-
-
-        # ==================================================
-        # Box 있음
-        # ==================================================
-
-        if result["detected"]:
-
-            print(
-                "Box exists."
-            )
-
-            print(
-                "Video will be kept."
-            )
-
-            return result
-
-
-        # ==================================================
-        # Box 없음
-        # ==================================================
-
-        else:
-
-            print(
-                "Box does not exist."
-            )
-
-            print(
-                "Deleting video..."
-            )
-
-            self.delete_video(
-                video_path
-            )
-
-            return result
+        cap.release()
