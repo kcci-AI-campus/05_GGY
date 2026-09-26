@@ -1,4 +1,4 @@
-# save_plus_boxdetect
+# save_plus_boxdetect.py
 
 import cv2
 import time
@@ -66,7 +66,7 @@ class ResourceMonitor:
         self.lock = Lock()
 
         # --------------------------------------------------
-        # GPU 상태 출력 여부
+        # GPU 사용률 출력 여부
         # --------------------------------------------------
 
         self.gpu_source_printed = False
@@ -77,13 +77,6 @@ class ResourceMonitor:
     # ======================================================
 
     def get_gpu_usage(self):
-
-        # --------------------------------------------------
-        # 방법 1
-        # Raspberry Pi 5 / 일부 최신 커널
-        #
-        # devfreq load
-        # --------------------------------------------------
 
         devfreq_paths = [
 
@@ -105,7 +98,6 @@ class ResourceMonitor:
 
                         value = f.read().strip()
 
-                    # 숫자만 있는 경우
                     match = re.search(
                         r"(\d+(?:\.\d+)?)",
                         value
@@ -117,7 +109,6 @@ class ResourceMonitor:
                             match.group(1)
                         )
 
-                        # 0~100 범위로 제한
                         gpu = max(
                             0.0,
                             min(
@@ -143,10 +134,7 @@ class ResourceMonitor:
 
 
         # --------------------------------------------------
-        # 방법 2
-        # Raspberry Pi GPU stats
-        #
-        # 최신 Raspberry Pi OS / Kernel
+        # gpu_stats 방식
         # --------------------------------------------------
 
         gpu_stats_paths = [
@@ -164,31 +152,13 @@ class ResourceMonitor:
 
                     continue
 
-                with open(
-                    path,
-                    "r"
-                ) as f:
-
-                    text = f.read()
-
-                # --------------------------------------------------
-                # gpu_stats는 누적 active time을 제공하는 형태가
-                # 있을 수 있으므로 두 번 읽어서 차이를 계산한다.
-                #
-                # 여기서는 ResourceMonitor에서 별도 처리한다.
-                # --------------------------------------------------
-
-                # 이 함수에서는 직접 사용하지 않고
-                # 아래 get_gpu_stats_counter()에서 처리한다.
+                # gpu_stats는 아래
+                # get_gpu_stats_counter()에서 처리
 
             except Exception:
 
                 pass
 
-
-        # --------------------------------------------------
-        # GPU 사용률을 읽을 수 없는 경우
-        # --------------------------------------------------
 
         return None
 
@@ -220,12 +190,6 @@ class ResourceMonitor:
                 ) as f:
 
                     text = f.read()
-
-                # --------------------------------------------------
-                # drm-engine-xxx: 숫자 형태의 값을 찾는다.
-                #
-                # 여러 GPU queue의 active time을 합산
-                # --------------------------------------------------
 
                 values = re.findall(
                     r"drm-engine-[^:]+:\s*([0-9]+)",
@@ -268,10 +232,6 @@ class ResourceMonitor:
         elapsed_time
     ):
 
-        # --------------------------------------------------
-        # 누적 counter를 사용할 수 없는 경우
-        # --------------------------------------------------
-
         if (
             previous_counter is None
             or
@@ -291,11 +251,6 @@ class ResourceMonitor:
         if delta < 0:
 
             return None
-
-        # --------------------------------------------------
-        # gpu_stats의 active time은 ns 단위이므로
-        # 실제 경과시간(ns)과 비교
-        # --------------------------------------------------
 
         elapsed_ns = \
             elapsed_time * 1_000_000_000
@@ -328,7 +283,7 @@ class ResourceMonitor:
     def get_phase(self):
 
         # --------------------------------------------------
-        # 1. 추론중
+        # 추론중
         # --------------------------------------------------
 
         if self.get_inference_state():
@@ -337,7 +292,7 @@ class ResourceMonitor:
 
 
         # --------------------------------------------------
-        # 2. 녹화중
+        # 녹화중
         # --------------------------------------------------
 
         if (
@@ -350,7 +305,7 @@ class ResourceMonitor:
 
 
         # --------------------------------------------------
-        # 3. 평시
+        # 평상시
         # --------------------------------------------------
 
         return "IDLE"
@@ -363,7 +318,7 @@ class ResourceMonitor:
     def _monitor_worker(self):
 
         # --------------------------------------------------
-        # psutil CPU 첫 측정 초기화
+        # CPU 첫 측정 초기화
         # --------------------------------------------------
 
         psutil.cpu_percent(
@@ -406,15 +361,16 @@ class ResourceMonitor:
             # RAM
             # ==================================================
 
-            ram_usage = psutil.virtual_memory().percent
+            ram_usage = \
+                psutil.virtual_memory().percent
 
 
             # ==================================================
             # GPU
             # ==================================================
 
-            # 먼저 devfreq 방식 시도
-            gpu_usage = self.get_gpu_usage()
+            gpu_usage = \
+                self.get_gpu_usage()
 
 
             # --------------------------------------------------
@@ -764,28 +720,36 @@ box_result_queue = Queue()
 # ==========================================================
 # 현재 화면에 표시할 Box 정보
 # ==========================================================
+#
+# 기존:
+#
+# current_bbox
+# current_confidence
+# current_damaged
+# current_damage_confidence
+#
+# 여러 Box를 처리하기 위해 리스트로 변경
+#
+# current_boxes = [
+#
+#     {
+#         "bbox": (...),
+#         "confidence": ...,
+#         "damaged": ...,
+#         "damage_confidence": ...,
+#         "damage_class_id": ...
+#     },
+#
+#     ...
+# ]
+#
+# ==========================================================
 
-current_bbox = None
-
-current_confidence = 0.0
-
-current_damaged = False
-
-current_damage_confidence = 0.0
+current_boxes = []
 
 
 # ==========================================================
 # 추론 상태
-# ==========================================================
-#
-# ResourceMonitor에서 사용
-#
-# True
-#   → 현재 BoxVideoChecker가 YOLO / Damage 추론중
-#
-# False
-#   → 추론중이 아님
-#
 # ==========================================================
 
 inference_active = False
@@ -823,8 +787,13 @@ def box_check_worker():
 
     while True:
 
-        video_path = box_check_queue.get()
+        video_path = \
+            box_check_queue.get()
 
+
+        # ==================================================
+        # 종료 요청
+        # ==================================================
 
         if video_path is None:
 
@@ -850,6 +819,10 @@ def box_check_worker():
         )
 
 
+        # ==================================================
+        # 추론 시작
+        # ==================================================
+
         inference_active = True
 
 
@@ -863,6 +836,28 @@ def box_check_worker():
                 box_checker.check_and_delete(
                     video_path
                 )
+
+        except Exception as e:
+
+            print(
+                "\n[Box Thread ERROR]"
+            )
+
+            print(
+                f"{type(e).__name__}: {e}"
+            )
+
+            # --------------------------------------------------
+            # 오류 발생 시에도 Main Thread가
+            # 대기하지 않도록 결과 전달
+            # --------------------------------------------------
+
+            result = {
+
+                "detected": False,
+
+                "boxes": []
+            }
 
 
         finally:
@@ -889,47 +884,71 @@ def box_check_worker():
             )
 
 
-        # ----------------------------------------------
-        # 기존 결과 처리
-        # ----------------------------------------------
+        # ==================================================
+        # 최종 결과 출력
+        # ==================================================
 
-        if result["detected"]:
+        if result.get("detected", False):
+
+            boxes = result.get(
+                "boxes",
+                []
+            )
+
 
             print(
                 "\n================================"
             )
 
             print(
-                "Final result: BOX DETECTED"
+                f"Final result: "
+                f"{len(boxes)} BOX DETECTED"
             )
 
-            print(
-                f"BBox: {result['bbox']}"
-            )
+
+            # --------------------------------------------------
+            # 각각의 Box 결과 출력
+            # --------------------------------------------------
+
+            for index, box in enumerate(
+                boxes,
+                start=1
+            ):
+
+                print(
+                    f"\n[BOX {index}]"
+                )
+
+                print(
+                    f"  BBox: "
+                    f"{box.get('bbox')}"
+                )
+
+                print(
+                    f"  Confidence: "
+                    f"{box.get('confidence', 0.0):.2f}"
+                )
+
+                print(
+                    f"  Damaged: "
+                    f"{box.get('damaged', False)}"
+                )
+
+                print(
+                    f"  Damage confidence: "
+                    f"{box.get('damage_confidence', 0.0):.2f}"
+                )
+
+                print(
+                    f"  Damage class ID: "
+                    f"{box.get('damage_class_id', -1)}"
+                )
+
 
             print(
-                f"Confidence: "
-                f"{result['confidence']:.2f}"
+                "\n================================"
             )
 
-            print(
-                f"Damaged: "
-                f"{result['damaged']}"
-            )
-
-            print(
-                f"Damage confidence: "
-                f"{result['damage_confidence']:.2f}"
-            )
-
-            print(
-                f"Damage class ID: "
-                f"{result['damage_class_id']}"
-            )
-
-            print(
-                "================================"
-            )
 
         else:
 
@@ -945,6 +964,10 @@ def box_check_worker():
                 "================================"
             )
 
+
+        # ==================================================
+        # Main Thread로 결과 전달
+        # ==================================================
 
         box_result_queue.put(
             result
@@ -1128,9 +1151,9 @@ try:
 
     while True:
 
-        # --------------------------------------------------
+        # ==================================================
         # FPS 계산
-        # --------------------------------------------------
+        # ==================================================
 
         fps_frame_count += 1
 
@@ -1153,14 +1176,16 @@ try:
 
             fps_frame_count = 0
 
-            fps_start_time = current_time
+            fps_start_time = \
+                current_time
 
 
         # ==================================================
-        # 1. Camera Frame 읽기
+        # Camera Frame 읽기
         # ==================================================
 
-        ret, frame = recorder.read()
+        ret, frame = \
+            recorder.read()
 
 
         if not ret:
@@ -1173,16 +1198,17 @@ try:
 
 
         # ==================================================
-        # 2. Motion Detection
+        # Motion Detection
         # ==================================================
 
-        video_path = recorder.process(
-            frame
-        )
+        video_path = \
+            recorder.process(
+                frame
+            )
 
 
         # ==================================================
-        # 3. Box + Damage 검사 결과 확인
+        # Box + Damage 검사 결과 확인
         # ==================================================
 
         try:
@@ -1193,38 +1219,33 @@ try:
                     box_result_queue.get_nowait()
 
 
-                # ------------------------------------------
-                # Box가 검출된 경우
-                # ------------------------------------------
+                # ==================================================
+                # Box 검출
+                # ==================================================
 
-                if result["detected"]:
+                if result.get(
+                    "detected",
+                    False
+                ):
 
-                    current_bbox = \
-                        result["bbox"]
+                    # --------------------------------------------------
+                    # 모든 Box 저장
+                    # --------------------------------------------------
 
-                    current_confidence = \
-                        result["confidence"]
-
-                    current_damaged = \
-                        result["damaged"]
-
-                    current_damage_confidence = \
-                        result["damage_confidence"]
+                    current_boxes = \
+                        result.get(
+                            "boxes",
+                            []
+                        )
 
 
-                # ------------------------------------------
-                # Box가 검출되지 않은 경우
-                # ------------------------------------------
+                # ==================================================
+                # Box 미검출
+                # ==================================================
 
                 else:
 
-                    current_bbox = None
-
-                    current_confidence = 0.0
-
-                    current_damaged = False
-
-                    current_damage_confidence = 0.0
+                    current_boxes = []
 
 
                 box_result_queue.task_done()
@@ -1236,18 +1257,80 @@ try:
 
 
         # ==================================================
-        # 4. Main 화면에 BBox 그리기
+        # Main 화면에 모든 BBox 그리기
         # ==================================================
 
-        if current_bbox is not None:
+        for index, box in enumerate(
+            current_boxes,
+            start=1
+        ):
 
-            x1, y1, x2, y2 = \
-                current_bbox
+            # --------------------------------------------------
+            # Box 정보 가져오기
+            # --------------------------------------------------
+
+            bbox = box.get(
+                "bbox"
+            )
+
+            confidence = box.get(
+                "confidence",
+                0.0
+            )
+
+            damaged = box.get(
+                "damaged",
+                False
+            )
+
+            damage_confidence = \
+                box.get(
+                    "damage_confidence",
+                    0.0
+                )
 
 
             # --------------------------------------------------
+            # BBox가 없는 경우
+            # --------------------------------------------------
+
+            if bbox is None:
+
+                continue
+
+
+            x1, y1, x2, y2 = bbox
+
+
+            # ==================================================
+            # Bounding Box 색상
+            # ==================================================
+            #
+            # 정상  → 초록색
+            # 손상  → 빨간색
+            #
+            # ==================================================
+
+            if damaged:
+
+                box_color = (
+                    0,
+                    0,
+                    255
+                )
+
+            else:
+
+                box_color = (
+                    0,
+                    255,
+                    0
+                )
+
+
+            # ==================================================
             # Bounding Box
-            # --------------------------------------------------
+            # ==================================================
 
             cv2.rectangle(
 
@@ -1257,21 +1340,31 @@ try:
 
                 (x2, y2),
 
-                (255, 0, 0),
+                box_color,
 
                 2
             )
 
 
-            # --------------------------------------------------
-            # Box Confidence
-            # --------------------------------------------------
+            # ==================================================
+            # Box 번호 + Confidence
+            # ==================================================
 
             box_label = (
 
-                f"BOX "
+                f"BOX {index} "
 
-                f"{current_confidence * 100:.2f}%"
+                f"{confidence * 100:.1f}%"
+            )
+
+
+            # --------------------------------------------------
+            # Box Label 위치
+            # --------------------------------------------------
+
+            label_y = max(
+                y1 - 8,
+                15
             )
 
 
@@ -1283,30 +1376,30 @@ try:
 
                 (
                     x1,
-                    max(y1 - 8, 15)
+                    label_y
                 ),
 
                 cv2.FONT_HERSHEY_SIMPLEX,
 
                 0.5,
 
-                (255, 0, 0),
+                box_color,
 
                 2
             )
 
 
             # ==================================================
-            # Damage 결과 화면 표시
+            # Damage 상태
             # ==================================================
 
-            if current_damaged:
+            if damaged:
 
                 damage_label = (
 
                     f"DAMAGE "
 
-                    f"{current_damage_confidence * 100:.2f}%"
+                    f"{damage_confidence * 100:.1f}%"
                 )
 
             else:
@@ -1315,8 +1408,18 @@ try:
 
                     f"NORMAL "
 
-                    f"{current_damage_confidence * 100:.2f}%"
+                    f"{damage_confidence * 100:.1f}%"
                 )
+
+
+            # --------------------------------------------------
+            # Damage Label 위치
+            # --------------------------------------------------
+
+            damage_y = min(
+                y2 + 20,
+                470
+            )
 
 
             cv2.putText(
@@ -1327,23 +1430,45 @@ try:
 
                 (
                     x1,
-                    min(y2 + 32, 470)
+                    damage_y
                 ),
 
                 cv2.FONT_HERSHEY_SIMPLEX,
 
                 0.5,
 
-                (0, 0, 255)
-                if current_damaged
-                else (0, 255, 0),
+                box_color,
 
                 2
             )
 
 
         # ==================================================
-        # 5. Recorder 상태 표시
+        # 검출된 Box 개수 표시
+        # ==================================================
+
+        if current_boxes:
+
+            cv2.putText(
+
+                frame,
+
+                f"Boxes: {len(current_boxes)}",
+
+                (10, 25),
+
+                cv2.FONT_HERSHEY_SIMPLEX,
+
+                0.55,
+
+                (255, 255, 255),
+
+                2
+            )
+
+
+        # ==================================================
+        # Recorder 상태 표시
         # ==================================================
 
         frame = recorder.draw_status(
@@ -1352,7 +1477,7 @@ try:
 
 
         # ==================================================
-        # 6. FPS 표시
+        # FPS 표시
         # ==================================================
 
         cv2.putText(
@@ -1374,7 +1499,7 @@ try:
 
 
         # ==================================================
-        # 7. 화면 출력
+        # 화면 출력
         # ==================================================
 
         cv2.imshow(
@@ -1384,7 +1509,7 @@ try:
 
 
         # ==================================================
-        # 8. 저장 완료된 영상 확인
+        # 저장 완료된 영상 확인
         # ==================================================
 
         if video_path is not None:
@@ -1416,7 +1541,7 @@ try:
 
 
         # ==================================================
-        # 9. 키 입력
+        # 키 입력
         # ==================================================
 
         key = cv2.waitKey(1) & 0xFF
@@ -1466,87 +1591,6 @@ finally:
         timeout=5
     )
 
-    # # ======================================================
-    # # Damage Inference Timing Summary
-    # # ======================================================
-
-    # print(
-    #     "\n"
-    #     + "=" * 70
-    # )
-
-    # print(
-    #     "       Damage Detection Timing Summary"
-    # )
-
-    # print(
-    #     "=" * 70
-    # )
-
-
-    # damage_timing = \
-    #     box_checker.get_damage_timing_summary()
-
-
-    # if damage_timing["count"] > 0:
-
-    #     print(
-    #         f"\n측정 횟수 : "
-    #         f"{damage_timing['count']}"
-    #     )
-
-
-    #     print(
-    #         "\n[Damage Model 자체 추론시간]"
-    #     )
-
-    #     print(
-    #         f"  평균 : "
-    #         f"{damage_timing['average_ms']:.2f} ms"
-    #     )
-
-    #     print(
-    #         f"  최소 : "
-    #         f"{damage_timing['min_ms']:.2f} ms"
-    #     )
-
-    #     print(
-    #         f"  최대 : "
-    #         f"{damage_timing['max_ms']:.2f} ms"
-    #     )
-
-
-    #     print(
-    #         "\n[Box → Damage 전체 처리시간]"
-    #     )
-
-    #     print(
-    #         f"  평균 : "
-    #         f"{damage_timing['box_to_damage_average_ms']:.2f} ms"
-    #     )
-
-    #     print(
-    #         f"  최소 : "
-    #         f"{damage_timing['box_to_damage_min_ms']:.2f} ms"
-    #     )
-
-    #     print(
-    #         f"  최대 : "
-    #         f"{damage_timing['box_to_damage_max_ms']:.2f} ms"
-    #     )
-
-    # else:
-
-    #     print(
-    #         "\n파손 모델 추론 데이터가 없습니다."
-    #     )
-
-
-    # print(
-    #     "\n"
-    #     + "=" * 70
-    # )
-
 
     # ------------------------------------------------------
     # Resource Monitor 종료
@@ -1572,4 +1616,3 @@ finally:
     print(
         "Camera stopped."
     )
-

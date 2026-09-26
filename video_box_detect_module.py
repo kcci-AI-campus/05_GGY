@@ -1,4 +1,5 @@
 # video_box_detect_module.py
+
 import cv2
 import os
 import time
@@ -20,43 +21,24 @@ class BoxVideoChecker:
     ):
 
         self.box_class_id = box_class_id
-
-        self.confidence_threshold = \
-            confidence_threshold
+        self.confidence_threshold = confidence_threshold
 
         self.check_seconds = check_seconds
+        self.detect_frame_count = detect_frame_count
+        self.frame_interval = frame_interval
 
-        # --------------------------------------------------
-        # 몇 개의 프레임에서 Box가 검출되면
-        # Box가 있다고 판단할 것인지
-        # --------------------------------------------------
-
-        self.detect_frame_count = \
-            detect_frame_count
-
-        # --------------------------------------------------
-        # 몇 프레임마다 YOLO를 실행할 것인지
-        #
-        # 1 = 모든 프레임
-        # 2 = 2프레임마다
-        # 3 = 3프레임마다
-        # --------------------------------------------------
-
-        self.frame_interval = \
-            frame_interval
-
-        # --------------------------------------------------
+        # ------------------------------------------
         # Box Detector
-        # --------------------------------------------------
+        # ------------------------------------------
 
         self.model = BoxDetector(
-            confidence_threshold=self.confidence_threshold,
-            class_id=self.box_class_id
+            confidence_threshold=confidence_threshold,
+            class_id=box_class_id
         )
 
-        # --------------------------------------------------
+        # ------------------------------------------
         # Damage Detector
-        # --------------------------------------------------
+        # ------------------------------------------
 
         self.damage_model = DamageDetector(
             model_path="damage_detect_float32.tflite",
@@ -64,39 +46,20 @@ class BoxVideoChecker:
             confidence_threshold=damage_confidence_threshold
         )
 
-        # --------------------------------------------------
-        # 파손 탐지 시간 측정
-        #
-        # damage_inference_times
-        #   → 파손 모델 자체의 순수 추론시간
-        #
-        # box_to_damage_times
-        #   → Box 검출 확정부터 파손 판정 완료까지
-        # --------------------------------------------------
-
         self.damage_inference_times = []
-
         self.box_to_damage_times = []
 
 
     # ======================================================
-    # 영상에서 Box 검사
+    # 영상 검사
     # ======================================================
 
     def check(self, video_path):
 
         print("\n[Box Check]")
-        print(
-            f"Video: {video_path}"
-        )
+        print(f"Video: {video_path}")
 
-        # --------------------------------------------------
-        # 영상 열기
-        # --------------------------------------------------
-
-        cap = cv2.VideoCapture(
-            video_path
-        )
+        cap = cv2.VideoCapture(video_path)
 
         if not cap.isOpened():
 
@@ -106,16 +69,13 @@ class BoxVideoChecker:
 
             return {
                 "detected": False,
-                "bbox": None,
-                "confidence": 0.0,
-                "damaged": False,
-                "damage_confidence": 0.0,
-                "damage_class_id": None
+                "boxes": []
             }
 
-        # --------------------------------------------------
+
+        # ==================================================
         # 영상 정보
-        # --------------------------------------------------
+        # ==================================================
 
         fps = cap.get(
             cv2.CAP_PROP_FPS
@@ -129,29 +89,20 @@ class BoxVideoChecker:
 
         if fps <= 0:
 
-            print(
-                "영상 FPS를 가져올 수 없습니다."
-            )
-
             cap.release()
 
             return {
                 "detected": False,
-                "bbox": None,
-                "confidence": 0.0,
-                "damaged": False,
-                "damage_confidence": 0.0,
-                "damage_class_id": None
+                "boxes": []
             }
+
 
         duration = frame_count / fps
 
-        # --------------------------------------------------
-        # 검사 시간 설정
-        #
-        # 영상이 3초보다 길면 마지막 3초
-        # 영상이 3초보다 짧으면 전체 영상
-        # --------------------------------------------------
+
+        # ==================================================
+        # 마지막 3초 또는 전체 영상
+        # ==================================================
 
         check_duration = min(
             self.check_seconds,
@@ -163,54 +114,25 @@ class BoxVideoChecker:
             duration - check_duration
         )
 
+
         print(
-            f"Video duration : "
-            f"{duration:.2f} sec"
+            f"Video duration : {duration:.2f} sec"
         )
 
         print(
-            f"Check duration : "
-            f"{check_duration:.2f} sec"
+            f"Check duration : {check_duration:.2f} sec"
         )
 
-        print(
-            f"Checking from  : "
-            f"{start_time:.2f} sec"
-        )
-
-        print(
-            f"Checking to    : "
-            f"{duration:.2f} sec"
-        )
-
-        print(
-            f"Frame interval : "
-            f"{self.frame_interval}"
-        )
-
-        print(
-            f"Required detections : "
-            f"{self.detect_frame_count}"
-        )
-
-        # --------------------------------------------------
-        # 검사 시작 위치로 이동
-        # --------------------------------------------------
 
         cap.set(
             cv2.CAP_PROP_POS_MSEC,
             start_time * 1000
         )
 
-        # --------------------------------------------------
-        # 검사 구간의 프레임 저장
-        #
-        # 여기서는 YOLO를 실행하지 않고
-        # 마지막 3초의 프레임만 메모리에 저장한다.
-        #
-        # 이후 마지막 프레임부터 역순으로
-        # 일정 간격마다 YOLO를 실행한다.
-        # --------------------------------------------------
+
+        # ==================================================
+        # 검사 구간 프레임 저장
+        # ==================================================
 
         frames = []
 
@@ -227,66 +149,39 @@ class BoxVideoChecker:
 
         cap.release()
 
-        # --------------------------------------------------
-        # 검사할 프레임이 없는 경우
-        # --------------------------------------------------
 
         if len(frames) == 0:
 
-            print(
-                "검사할 프레임이 없습니다."
-            )
-
             return {
                 "detected": False,
-                "bbox": None,
-                "confidence": 0.0,
-                "damaged": False,
-                "damage_confidence": 0.0,
-                "damage_class_id": None
+                "boxes": []
             }
 
+
         print(
-            f"Frames in check range : "
-            f"{len(frames)}"
+            f"Frames in check range : {len(frames)}"
         )
 
-        # --------------------------------------------------
-        # 검출 관련 변수
-        # --------------------------------------------------
 
-        detected_frames = 0
+        # ==================================================
+        # 검출된 Box들을 저장
+        # ==================================================
 
-        box_to_damage_start = None
+        detected_boxes = []
 
-        # 마지막으로 Box가 검출된 정보
-        last_bbox = None
-        last_confidence = 0.0
 
-        # 마지막으로 Box가 검출된 원본 frame
-        last_detected_frame = None
-
-        # --------------------------------------------------
+        # ==================================================
         # 마지막 프레임부터 검사
-        #
-        # 예:
-        #
-        # frame 44
-        # frame 41
-        # frame 38
-        # frame 35
-        # ...
-        #
-        # frame_interval = 3
-        # --------------------------------------------------
+        # ==================================================
 
         frame_index = len(frames) - 1
 
+        detected_frames = 0
+
+
         while frame_index >= 0:
 
-            frame = frames[
-                frame_index
-            ]
+            frame = frames[frame_index]
 
             print(
                 f"[YOLO] Checking frame "
@@ -294,46 +189,23 @@ class BoxVideoChecker:
                 f"{len(frames)}"
             )
 
-            # ==================================================
-            # YOLO 추론
-            # ==================================================
 
-            results = self.model(
-                frame
-            )
+            results = self.model(frame)
 
-            box_detected = False
 
             # ==================================================
-            # Detection 결과 확인
-            #
-            # 기존 BoxDetector 반환 형식 유지
-            #
-            # detection[0] = x1
-            # detection[1] = y1
-            # detection[2] = x2
-            # detection[3] = y2
-            # detection[4] = confidence
-            # detection[5] = class_id
+            # 이 프레임에서 검출된 Box 전부 처리
             # ==================================================
+
+            frame_boxes = []
+
 
             for detection in results:
 
-                x1 = int(
-                    detection[0]
-                )
-
-                y1 = int(
-                    detection[1]
-                )
-
-                x2 = int(
-                    detection[2]
-                )
-
-                y2 = int(
-                    detection[3]
-                )
+                x1 = int(detection[0])
+                y1 = int(detection[1])
+                x2 = int(detection[2])
+                y2 = int(detection[3])
 
                 confidence = float(
                     detection[4]
@@ -343,92 +215,64 @@ class BoxVideoChecker:
                     detection[5]
                 )
 
-                # --------------------------------------------------
-                # Box class 확인
-                # --------------------------------------------------
 
                 if class_id != self.box_class_id:
-
                     continue
 
-                # --------------------------------------------------
-                # Confidence 확인
-                # --------------------------------------------------
 
-                if (
-                    confidence
-                    < self.confidence_threshold
-                ):
-
+                if confidence < self.confidence_threshold:
                     continue
 
-                # --------------------------------------------------
-                # 현재 프레임에서 Box 검출
-                # --------------------------------------------------
 
-                box_detected = True
-
-                last_bbox = (
-                    x1,
-                    y1,
-                    x2,
-                    y2
+                frame_boxes.append(
+                    {
+                        "bbox": (
+                            x1,
+                            y1,
+                            x2,
+                            y2
+                        ),
+                        "confidence": confidence,
+                        "class_id": class_id
+                    }
                 )
 
-                last_confidence = \
-                    confidence
-
-                # --------------------------------------------------
-                # 현재 검출 프레임 저장
-                # --------------------------------------------------
-
-                last_detected_frame = \
-                    frame.copy()
-
-                break
 
             # ==================================================
-            # Box 검출
+            # Box가 검출된 경우
             # ==================================================
 
-            if box_detected:
+            if len(frame_boxes) > 0:
 
                 detected_frames += 1
 
+
                 print(
-                    f"[YOLO] Box detected "
-                    f"({detected_frames}/"
-                    f"{self.detect_frame_count}) "
-                    f"confidence="
-                    f"{last_confidence:.2f}"
+                    f"[YOLO] "
+                    f"{len(frame_boxes)}개의 Box 검출"
                 )
 
-                # --------------------------------------------------
-                # 필요한 검출 횟수에 도달하면
-                # 즉시 YOLO 검사 종료
-                # --------------------------------------------------
+
+                # ------------------------------------------
+                # 현재 프레임의 Box 정보 저장
+                # ------------------------------------------
+
+                detected_boxes = frame_boxes
+
+                last_detected_frame = frame.copy()
+
+
+                # ------------------------------------------
+                # 충분한 프레임에서 검출되었으면 종료
+                # ------------------------------------------
 
                 if (
                     detected_frames
                     >= self.detect_frame_count
                 ):
 
-                    print(
-                        "[YOLO] Required "
-                        "detection count reached."
-                    )
-
-                    # --------------------------------------------------
-                    # Box 검출 확정
-                    #
-                    # 이 시점부터
-                    # Box → Damage 처리 시간을 측정
-                    # --------------------------------------------------
-
-                    box_to_damage_start = \
-                        time.perf_counter()
-
                     break
+
 
             else:
 
@@ -436,42 +280,15 @@ class BoxVideoChecker:
                     "[YOLO] Box not detected."
                 )
 
-            # --------------------------------------------------
-            # 다음 프레임
-            #
-            # 마지막부터 역순으로
-            # frame_interval 만큼 이동
-            # --------------------------------------------------
 
-            frame_index -= \
-                self.frame_interval
+            frame_index -= self.frame_interval
 
-        # ======================================================
-        # Box 탐지 결과
-        # ======================================================
 
-        print(
-            f"\n[YOLO Result]"
-        )
+        # ==================================================
+        # Box가 하나도 없는 경우
+        # ==================================================
 
-        print(
-            f"Checked frames : "
-            f"up to {self.detect_frame_count}"
-        )
-
-        print(
-            f"Detected frames : "
-            f"{detected_frames}"
-        )
-
-        # --------------------------------------------------
-        # 필요한 횟수만큼 검출되지 않은 경우
-        # --------------------------------------------------
-
-        if (
-            detected_frames
-            < self.detect_frame_count
-        ):
+        if len(detected_boxes) == 0:
 
             print(
                 "Box not detected."
@@ -479,263 +296,187 @@ class BoxVideoChecker:
 
             return {
                 "detected": False,
-                "bbox": None,
-                "confidence": 0.0,
-                "damaged": False,
-                "damage_confidence": 0.0,
-                "damage_class_id": None
+                "boxes": []
             }
 
-        # ======================================================
-        # Box 탐지 성공
-        # ======================================================
 
-        print(
-            "Box detected!"
-        )
+        # ==================================================
+        # 여러 Box 각각 Damage 검사
+        # ==================================================
 
-        print(
-            f"BBox       : "
-            f"{last_bbox}"
-        )
+        final_boxes = []
 
-        print(
-            f"Confidence : "
-            f"{last_confidence:.2f}"
-        )
 
-        # --------------------------------------------------
-        # 마지막 검출 프레임 또는 BBox가 없는 경우
-        # --------------------------------------------------
-
-        if (
-            last_detected_frame is None
-            or last_bbox is None
+        for box_index, box_info in enumerate(
+            detected_boxes
         ):
 
-            print(
-                "Damage detection skipped."
-            )
+            bbox = box_info["bbox"]
 
-            return {
-                "detected": True,
-                "bbox": last_bbox,
-                "confidence": last_confidence,
-                "damaged": False,
-                "damage_confidence": 0.0,
-                "damage_class_id": None
-            }
+            confidence = box_info["confidence"]
 
-        # ======================================================
-        # BBox 영역 Crop
-        # ======================================================
+            x1, y1, x2, y2 = bbox
 
-        frame_height, frame_width = \
-            last_detected_frame.shape[:2]
-
-        x1, y1, x2, y2 = \
-            last_bbox
-
-        # --------------------------------------------------
-        # BBox 좌표 안전성 검사
-        # --------------------------------------------------
-
-        x1 = max(
-            0,
-            min(
-                x1,
-                frame_width
-            )
-        )
-
-        y1 = max(
-            0,
-            min(
-                y1,
-                frame_height
-            )
-        )
-
-        x2 = max(
-            0,
-            min(
-                x2,
-                frame_width
-            )
-        )
-
-        y2 = max(
-            0,
-            min(
-                y2,
-                frame_height
-            )
-        )
-
-        # --------------------------------------------------
-        # 잘못된 BBox 확인
-        # --------------------------------------------------
-
-        if (
-            x2 <= x1
-            or y2 <= y1
-        ):
 
             print(
-                "잘못된 BBox입니다."
+                "\n"
+                + "=" * 50
             )
 
-            return {
-                "detected": True,
-                "bbox": last_bbox,
-                "confidence": last_confidence,
-                "damaged": False,
-                "damage_confidence": 0.0,
-                "damage_class_id": None
-            }
+            print(
+                f"[Box {box_index + 1}]"
+            )
 
-        # ======================================================
-        # Box 영역 Crop
-        # ======================================================
+            print(
+                f"BBox       : {bbox}"
+            )
 
-        cropped_box = \
-            last_detected_frame[
+            print(
+                f"Confidence : {confidence:.2f}"
+            )
+
+
+            # ==================================================
+            # BBox 안전성 검사
+            # ==================================================
+
+            frame_height, frame_width = \
+                last_detected_frame.shape[:2]
+
+
+            x1 = max(
+                0,
+                min(x1, frame_width)
+            )
+
+            y1 = max(
+                0,
+                min(y1, frame_height)
+            )
+
+            x2 = max(
+                0,
+                min(x2, frame_width)
+            )
+
+            y2 = max(
+                0,
+                min(y2, frame_height)
+            )
+
+
+            if x2 <= x1 or y2 <= y1:
+
+                print(
+                    "잘못된 BBox"
+                )
+
+                continue
+
+
+            # ==================================================
+            # Box Crop
+            # ==================================================
+
+            cropped_box = last_detected_frame[
                 y1:y2,
                 x1:x2
             ]
 
-        print(
-            f"Crop size : "
-            f"{cropped_box.shape[1]}x"
-            f"{cropped_box.shape[0]}"
-        )
 
-        # ======================================================
-        # Damage Model 추론
-        # ======================================================
-        print(
-            "\n[Damage Check]"
-        )
+            # ==================================================
+            # Damage 추론
+            # ==================================================
 
-        # ==================================================
-        # 파손 모델 순수 추론시간 측정 시작
-        # ==================================================
-
-        damage_inference_start = \
-            time.perf_counter()
+            damage_start = time.perf_counter()
 
 
-        damage_result = \
-            self.damage_model(
+            damage_result = self.damage_model(
                 cropped_box
             )
 
 
-        # ==================================================
-        # 파손 모델 순수 추론시간 측정 종료
-        # ==================================================
-
-        damage_inference_end = \
-            time.perf_counter()
+            damage_end = time.perf_counter()
 
 
-        damage_inference_time = (
-            damage_inference_end
-            -
-            damage_inference_start
-        )
-
-
-        damage_inference_time_ms = (
-            damage_inference_time
-            * 1000
-        )
-
-
-        # --------------------------------------------------
-        # 파손 모델 추론시간 저장
-        # --------------------------------------------------
-
-        self.damage_inference_times.append(
-            damage_inference_time_ms
-        )
-
-
-        print(
-            f"Damage inference time : "
-            f"{damage_inference_time_ms:.2f} ms"
-        )
-
-        print(
-            f"Damaged    : "
-            f"{damage_result['damaged']}"
-        )
-
-        print(
-            f"Confidence : "
-            f"{damage_result['confidence']:.2f}"
-        )
-
-        print(
-            f"Class ID   : "
-            f"{damage_result['class_id']}"
-        )
-
-        # ==================================================
-        # Box → Damage 전체 처리시간
-        # ==================================================
-
-        if box_to_damage_start is not None:
-
-            box_to_damage_end = \
-                time.perf_counter()
-
-
-            box_to_damage_time = (
-                box_to_damage_end
+            damage_time_ms = (
+                damage_end
                 -
-                box_to_damage_start
+                damage_start
+            ) * 1000
+
+
+            self.damage_inference_times.append(
+                damage_time_ms
             )
 
 
-            box_to_damage_time_ms = (
-                box_to_damage_time
-                * 1000
-            )
+            # ==================================================
+            # 결과 저장
+            # ==================================================
 
+            final_boxes.append(
+                {
+                    "bbox": (
+                        x1,
+                        y1,
+                        x2,
+                        y2
+                    ),
 
-            self.box_to_damage_times.append(
-                box_to_damage_time_ms
+                    "confidence":
+                        confidence,
+
+                    "damaged":
+                        damage_result["damaged"],
+
+                    "damage_confidence":
+                        damage_result["confidence"],
+
+                    "damage_class_id":
+                        damage_result["class_id"]
+                }
             )
 
 
             print(
-                f"Box → Damage time : "
-                f"{box_to_damage_time_ms:.2f} ms"
+                f"Damage      : "
+                f"{damage_result['damaged']}"
             )
 
-        # ======================================================
+            print(
+                f"Damage conf : "
+                f"{damage_result['confidence']:.2f}"
+            )
+
+            print(
+                f"Damage time : "
+                f"{damage_time_ms:.2f} ms"
+            )
+
+
+        # ==================================================
         # 최종 결과
-        # ======================================================
+        # ==================================================
+
+        print(
+            "\n"
+            + "=" * 60
+        )
+
+        print(
+            f"최종 Box 개수 : "
+            f"{len(final_boxes)}"
+        )
+
+        print(
+            "=" * 60
+        )
+
 
         return {
-            "detected": True,
-
-            "bbox": last_bbox,
-
-            "confidence": last_confidence,
-
-            "damaged": damage_result[
-                "damaged"
-            ],
-
-            "damage_confidence": damage_result[
-                "confidence"
-            ],
-
-            "damage_class_id": damage_result[
-                "class_id"
-            ]
+            "detected": len(final_boxes) > 0,
+            "boxes": final_boxes
         }
 
 
@@ -743,190 +484,51 @@ class BoxVideoChecker:
     # 영상 삭제
     # ======================================================
 
-    def delete_video(
-        self,
-        video_path
-    ):
+    def delete_video(self, video_path):
 
-        if os.path.exists(
-            video_path
-        ):
+        if os.path.exists(video_path):
 
-            os.remove(
-                video_path
-            )
+            os.remove(video_path)
 
             print(
-                f"Video deleted: "
-                f"{video_path}"
+                f"Video deleted: {video_path}"
             )
 
             return True
-
-        print(
-            f"Video not found: "
-            f"{video_path}"
-        )
 
         return False
 
 
     # ======================================================
-    # Box 검사 + 삭제
+    # 검사 + 삭제
     # ======================================================
 
-    def check_and_delete(
-        self,
-        video_path
-    ):
+    def check_and_delete(self, video_path):
 
         result = self.check(
             video_path
         )
 
-        # ==================================================
-        # Box 있음
-        # ==================================================
 
         if result["detected"]:
 
             print(
-                "Box exists."
+                f"Box {len(result['boxes'])}개 발견"
             )
 
             print(
                 "Video will be kept."
             )
 
-            # --------------------------------------------------
-            # 파손 여부 출력
-            # --------------------------------------------------
-
-            if result["damaged"]:
-
-                print(
-                    "Damage detected."
-                )
-
-            else:
-
-                print(
-                    "No damage detected."
-                )
-
             return result
 
-        # ==================================================
-        # Box 없음
-        # ==================================================
 
-        else:
-
-            print(
-                "Box does not exist."
-            )
-
-            print(
-                "Deleting video..."
-            )
-
-            self.delete_video(
-                video_path
-            )
-
-            return result
-
-    # ======================================================
-    # Damage 추론 시간 통계
-    # ======================================================
-
-    def get_damage_timing_summary(self):
-
-        # --------------------------------------------------
-        # 데이터가 없는 경우
-        # --------------------------------------------------
-
-        if not self.damage_inference_times:
-
-            return {
-                "count": 0,
-                "average_ms": None,
-                "min_ms": None,
-                "max_ms": None,
-                "box_to_damage_average_ms": None,
-                "box_to_damage_min_ms": None,
-                "box_to_damage_max_ms": None
-            }
-
-
-        # --------------------------------------------------
-        # Damage 모델 순수 추론
-        # --------------------------------------------------
-
-        damage_average = (
-            sum(self.damage_inference_times)
-            /
-            len(self.damage_inference_times)
+        print(
+            "Box does not exist."
         )
 
-
-        damage_min = min(
-            self.damage_inference_times
+        self.delete_video(
+            video_path
         )
 
-
-        damage_max = max(
-            self.damage_inference_times
-        )
-
-
-        # --------------------------------------------------
-        # Box → Damage 전체 시간
-        # --------------------------------------------------
-
-        if self.box_to_damage_times:
-
-            box_to_damage_average = (
-                sum(self.box_to_damage_times)
-                /
-                len(self.box_to_damage_times)
-            )
-
-            box_to_damage_min = min(
-                self.box_to_damage_times
-            )
-
-            box_to_damage_max = max(
-                self.box_to_damage_times
-            )
-
-        else:
-
-            box_to_damage_average = None
-            box_to_damage_min = None
-            box_to_damage_max = None
-
-
-        return {
-
-            "count":
-                len(self.damage_inference_times),
-
-            "average_ms":
-                damage_average,
-
-            "min_ms":
-                damage_min,
-
-            "max_ms":
-                damage_max,
-
-            "box_to_damage_average_ms":
-                box_to_damage_average,
-
-            "box_to_damage_min_ms":
-                box_to_damage_min,
-
-            "box_to_damage_max_ms":
-                box_to_damage_max
-        }
+        return result
