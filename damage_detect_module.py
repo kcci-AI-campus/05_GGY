@@ -1,4 +1,5 @@
 # damage_detect_module.py
+
 import cv2
 import numpy as np
 import tflite_runtime.interpreter as tflite
@@ -9,16 +10,21 @@ class DamageDetector:
     def __init__(
         self,
         model_path="damage_detect_float32.tflite",
-        damaged_class_id=1,
+        damaged_class_id=0,
         confidence_threshold=0.5
     ):
-        self.model_path = model_path
-        self.damaged_class_id = damaged_class_id
-        self.confidence_threshold = confidence_threshold
 
-        # -----------------------------------------
-        # TFLite 모델 로드
-        # -----------------------------------------
+        self.model_path = model_path
+
+        self.damaged_class_id = \
+            damaged_class_id
+
+        self.confidence_threshold = \
+            confidence_threshold
+
+        # --------------------------------------------------
+        # TFLite Interpreter
+        # --------------------------------------------------
 
         self.interpreter = tflite.Interpreter(
             model_path=self.model_path
@@ -26,34 +32,44 @@ class DamageDetector:
 
         self.interpreter.allocate_tensors()
 
-        # 입력 / 출력 정보
-        self.input_details = (
+        # --------------------------------------------------
+        # Input / Output 정보
+        # --------------------------------------------------
+
+        self.input_details = \
             self.interpreter.get_input_details()
-        )
 
-        self.output_details = (
+        self.output_details = \
             self.interpreter.get_output_details()
-        )
 
-        # -----------------------------------------
-        # 입력 shape 확인
-        # -----------------------------------------
+        input_shape = \
+            self.input_details[0]["shape"]
 
-        input_shape = self.input_details[0]["shape"]
+        self.input_height = \
+            int(input_shape[1])
 
-        # 일반적인 이미지 입력:
-        # [1, height, width, channels]
-        self.input_height = int(input_shape[1])
-        self.input_width = int(input_shape[2])
-        self.input_channels = int(input_shape[3])
+        self.input_width = \
+            int(input_shape[2])
+
+        self.input_channels = \
+            int(input_shape[3])
 
         print("\n[DamageDetector]")
-        print(f"Model       : {self.model_path}")
-        print(f"Input shape : {input_shape}")
+
+        print(
+            f"Model       : "
+            f"{self.model_path}"
+        )
+
+        print(
+            f"Input shape : "
+            f"{input_shape}"
+        )
 
         for i, output in enumerate(
             self.output_details
         ):
+
             print(
                 f"Output {i} shape : "
                 f"{output['shape']}"
@@ -61,19 +77,29 @@ class DamageDetector:
 
         print()
 
-    # -----------------------------------------
-    # 입력 이미지 전처리
-    # -----------------------------------------
 
-    def preprocess(self, frame):
+    # ======================================================
+    # 전처리
+    # ======================================================
 
+    def preprocess(
+        self,
+        frame
+    ):
+
+        # --------------------------------------------------
         # BGR → RGB
+        # --------------------------------------------------
+
         image = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2RGB
         )
 
+        # --------------------------------------------------
         # 모델 입력 크기로 resize
+        # --------------------------------------------------
+
         image = cv2.resize(
             image,
             (
@@ -82,20 +108,24 @@ class DamageDetector:
             )
         )
 
-        # float32 변환
+        # --------------------------------------------------
+        # Float32 변환
+        # --------------------------------------------------
+
         image = image.astype(
             np.float32
         )
 
-        # -----------------------------------------
-        # Float32 모델의 일반적인 정규화
-        # -----------------------------------------
-        # 0 ~ 255
-        # ↓
-        # 0.0 ~ 1.0
+        # --------------------------------------------------
+        # 0 ~ 1 정규화
+        # --------------------------------------------------
+
         image /= 255.0
 
-        # batch dimension 추가
+        # --------------------------------------------------
+        # Batch dimension 추가
+        # --------------------------------------------------
+
         image = np.expand_dims(
             image,
             axis=0
@@ -103,82 +133,136 @@ class DamageDetector:
 
         return image
 
-    # -----------------------------------------
-    # 추론
-    # -----------------------------------------
 
-    def predict(self, frame):
+    # ======================================================
+    # Softmax
+    # ======================================================
+
+    def softmax(
+        self,
+        values
+    ):
+
+        # --------------------------------------------------
+        # Overflow 방지를 위해 최댓값을 빼준다.
+        # --------------------------------------------------
+
+        values = values - np.max(
+            values
+        )
+
+        exp_values = np.exp(
+            values
+        )
+
+        probabilities = (
+            exp_values
+            /
+            np.sum(exp_values)
+        )
+
+        return probabilities
+
+
+    # ======================================================
+    # Damage 추론
+    # ======================================================
+
+    def predict(
+        self,
+        frame
+    ):
+
+        # --------------------------------------------------
+        # 입력 frame 확인
+        # --------------------------------------------------
 
         if frame is None:
+
             return {
                 "damaged": False,
                 "confidence": 0.0,
                 "class_id": None
             }
 
+        # --------------------------------------------------
         # 전처리
+        # --------------------------------------------------
+
         input_data = self.preprocess(
             frame
         )
 
-        # 입력 tensor 설정
+        # --------------------------------------------------
+        # Input 설정
+        # --------------------------------------------------
+
         self.interpreter.set_tensor(
             self.input_details[0]["index"],
             input_data
         )
 
+        # --------------------------------------------------
         # 추론
+        # --------------------------------------------------
+
         self.interpreter.invoke()
 
-        # 출력 가져오기
+        # --------------------------------------------------
+        # Output 가져오기
+        # --------------------------------------------------
+
         output = self.interpreter.get_tensor(
             self.output_details[0]["index"]
         )
 
-        # batch 제거
-        output = np.squeeze(output)
+        output = np.squeeze(
+            output
+        )
 
-        # -----------------------------------------
-        # 출력 형태에 따른 처리
-        # -----------------------------------------
+        # --------------------------------------------------
+        # Raw output 확인
+        # --------------------------------------------------
 
-        # 예:
-        # [0.9, 0.1]
-        # [0.1, 0.9]
-        #
-        # 와 같은 classification 결과를 가정
-        if output.ndim == 1 and len(output) > 1:
+        print(
+            f"Raw output: {output}"
+        )
 
-            probabilities = output
+        print(
+            f"Output shape: {output.shape}"
+        )
+
+        # ==================================================
+        # 2-Class classification
+        # ==================================================
+
+        if output.ndim == 1 and len(output) == 2:
+
+            # --------------------------------------------------
+            # Logits → Probability
+            # --------------------------------------------------
+
+            probabilities = self.softmax(
+                output
+            )
+
+            # --------------------------------------------------
+            # 가장 높은 확률의 class 선택
+            # --------------------------------------------------
 
             class_id = int(
-                np.argmax(probabilities)
+                np.argmax(
+                    probabilities
+                )
             )
+
+            # --------------------------------------------------
+            # 선택된 class의 확률
+            # --------------------------------------------------
 
             confidence = float(
                 probabilities[class_id]
             )
-
-        # -----------------------------------------
-        # binary classification
-        #
-        # 예:
-        # [0.83]
-        # -----------------------------------------
-
-        elif output.size == 1:
-
-            value = float(
-                output.item()
-            )
-
-            # sigmoid 출력이라고 가정
-            confidence = value
-
-            if value >= 0.5:
-                class_id = 1
-            else:
-                class_id = 0
 
         else:
 
@@ -187,13 +271,50 @@ class DamageDetector:
                 f"Output shape: {output.shape}"
             )
 
-        # -----------------------------------------
-        # 파손 여부
-        # -----------------------------------------
+        # ==================================================
+        # Damage 여부
+        # ==================================================
 
         damaged = (
-            class_id == self.damaged_class_id
-            and confidence >= self.confidence_threshold
+
+            class_id
+            ==
+            self.damaged_class_id
+
+            and
+
+            confidence
+            >=
+            self.confidence_threshold
+        )
+
+        # --------------------------------------------------
+        # 결과 출력
+        # --------------------------------------------------
+
+        print(
+            f"Class 0 probability : "
+            f"{probabilities[0]:.4f}"
+        )
+
+        print(
+            f"Class 1 probability : "
+            f"{probabilities[1]:.4f}"
+        )
+
+        print(
+            f"Predicted class     : "
+            f"{class_id}"
+        )
+
+        print(
+            f"Confidence           : "
+            f"{confidence:.4f}"
+        )
+
+        print(
+            f"Damaged              : "
+            f"{damaged}"
         )
 
         return {
@@ -202,10 +323,18 @@ class DamageDetector:
             "class_id": class_id
         }
 
-    # -----------------------------------------
-    # 호출형 인터페이스
-    # -----------------------------------------
 
-    def __call__(self, frame):
+    # ======================================================
+    # __call__
+    # ======================================================
 
-        return self.predict(frame)
+    def __call__(
+        self,
+        frame
+    ):
+
+        return self.predict(
+            frame
+        )
+
+
