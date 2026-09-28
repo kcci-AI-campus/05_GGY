@@ -38,10 +38,6 @@ class ResourceMonitor:
 
         self.thread = None
 
-        # --------------------------------------------------
-        # 구간별 자원 사용량 저장
-        # --------------------------------------------------
-
         self.stats = {
 
             "IDLE": {
@@ -65,86 +61,24 @@ class ResourceMonitor:
 
         self.lock = Lock()
 
-        # --------------------------------------------------
-        # GPU 사용률 출력 여부
-        # --------------------------------------------------
-
         self.gpu_source_printed = False
 
 
     # ======================================================
-    # GPU 사용률 읽기
+    # GPU 사용률
     # ======================================================
 
     def get_gpu_usage(self):
 
-        devfreq_paths = [
+        paths = [
 
             "/sys/class/devfreq/1f0000.gpu/load",
 
             "/sys/class/devfreq/1f0000.gpu/utilization"
         ]
 
-        for path in devfreq_paths:
 
-            try:
-
-                if os.path.exists(path):
-
-                    with open(
-                        path,
-                        "r"
-                    ) as f:
-
-                        value = f.read().strip()
-
-                    match = re.search(
-                        r"(\d+(?:\.\d+)?)",
-                        value
-                    )
-
-                    if match:
-
-                        gpu = float(
-                            match.group(1)
-                        )
-
-                        gpu = max(
-                            0.0,
-                            min(
-                                gpu,
-                                100.0
-                            )
-                        )
-
-                        if not self.gpu_source_printed:
-
-                            print(
-                                f"[Resource Monitor] "
-                                f"GPU source: {path}"
-                            )
-
-                            self.gpu_source_printed = True
-
-                        return gpu
-
-            except Exception:
-
-                pass
-
-
-        # --------------------------------------------------
-        # gpu_stats 방식
-        # --------------------------------------------------
-
-        gpu_stats_paths = [
-
-            "/sys/devices/platform/axi/1002000000.v3d/gpu_stats",
-
-            "/sys/devices/platform/v3dbus/fec00000.v3d/gpu_stats"
-        ]
-
-        for path in gpu_stats_paths:
+        for path in paths:
 
             try:
 
@@ -152,8 +86,49 @@ class ResourceMonitor:
 
                     continue
 
-                # gpu_stats는 아래
-                # get_gpu_stats_counter()에서 처리
+
+                with open(
+                    path,
+                    "r"
+                ) as f:
+
+                    value = f.read().strip()
+
+
+                match = re.search(
+                    r"(\d+(?:\.\d+)?)",
+                    value
+                )
+
+
+                if match:
+
+                    gpu = float(
+                        match.group(1)
+                    )
+
+
+                    gpu = max(
+                        0.0,
+                        min(
+                            gpu,
+                            100.0
+                        )
+                    )
+
+
+                    if not self.gpu_source_printed:
+
+                        print(
+                            f"[Resource Monitor] "
+                            f"GPU source: {path}"
+                        )
+
+                        self.gpu_source_printed = True
+
+
+                    return gpu
+
 
             except Exception:
 
@@ -164,7 +139,7 @@ class ResourceMonitor:
 
 
     # ======================================================
-    # GPU 누적 사용시간 읽기
+    # GPU counter
     # ======================================================
 
     def get_gpu_stats_counter(self):
@@ -176,6 +151,7 @@ class ResourceMonitor:
             "/sys/devices/platform/v3dbus/fec00000.v3d/gpu_stats"
         ]
 
+
         for path in paths:
 
             try:
@@ -184,6 +160,7 @@ class ResourceMonitor:
 
                     continue
 
+
                 with open(
                     path,
                     "r"
@@ -191,10 +168,12 @@ class ResourceMonitor:
 
                     text = f.read()
 
+
                 values = re.findall(
                     r"drm-engine-[^:]+:\s*([0-9]+)",
                     text
                 )
+
 
                 if values:
 
@@ -202,6 +181,7 @@ class ResourceMonitor:
                         int(v)
                         for v in values
                     )
+
 
                     if not self.gpu_source_printed:
 
@@ -212,11 +192,14 @@ class ResourceMonitor:
 
                         self.gpu_source_printed = True
 
+
                     return total
+
 
             except Exception:
 
                 pass
+
 
         return None
 
@@ -242,22 +225,25 @@ class ResourceMonitor:
 
             return None
 
+
         delta = (
             current_counter
             -
             previous_counter
         )
 
+
         if delta < 0:
 
             return None
 
-        elapsed_ns = \
-            elapsed_time * 1_000_000_000
 
-        if elapsed_ns <= 0:
+        elapsed_ns = (
+            elapsed_time
+            *
+            1_000_000_000
+        )
 
-            return None
 
         gpu_usage = (
             delta
@@ -265,7 +251,8 @@ class ResourceMonitor:
             elapsed_ns
         ) * 100.0
 
-        gpu_usage = max(
+
+        return max(
             0.0,
             min(
                 gpu_usage,
@@ -273,27 +260,17 @@ class ResourceMonitor:
             )
         )
 
-        return gpu_usage
-
 
     # ======================================================
-    # 현재 프로그램 구간 확인
+    # 현재 phase
     # ======================================================
 
     def get_phase(self):
-
-        # --------------------------------------------------
-        # 추론중
-        # --------------------------------------------------
 
         if self.get_inference_state():
 
             return "INFERENCE"
 
-
-        # --------------------------------------------------
-        # 녹화중
-        # --------------------------------------------------
 
         if (
             self.recorder.recording
@@ -304,29 +281,23 @@ class ResourceMonitor:
             return "RECORDING"
 
 
-        # --------------------------------------------------
-        # 평상시
-        # --------------------------------------------------
-
         return "IDLE"
 
 
     # ======================================================
-    # Resource Monitoring Thread
+    # Monitor Worker
     # ======================================================
 
     def _monitor_worker(self):
-
-        # --------------------------------------------------
-        # CPU 첫 측정 초기화
-        # --------------------------------------------------
 
         psutil.cpu_percent(
             interval=None
         )
 
+
         previous_gpu_counter = \
             self.get_gpu_stats_counter()
+
 
         previous_time = time.time()
 
@@ -337,7 +308,9 @@ class ResourceMonitor:
                 self.sample_interval
             )
 
+
             current_time = time.time()
+
 
             elapsed = (
                 current_time
@@ -345,7 +318,9 @@ class ResourceMonitor:
                 previous_time
             )
 
-            previous_time = current_time
+
+            previous_time = \
+                current_time
 
 
             # ==================================================
@@ -369,86 +344,65 @@ class ResourceMonitor:
             # GPU
             # ==================================================
 
+            current_gpu_counter = \
+                self.get_gpu_stats_counter()
+
+
             gpu_usage = \
-                self.get_gpu_usage()
+                self.calculate_gpu_usage(
+                    previous_gpu_counter,
+                    current_gpu_counter,
+                    elapsed
+                )
 
 
-            # --------------------------------------------------
-            # devfreq가 없으면 gpu_stats 사용
-            # --------------------------------------------------
-
-            if gpu_usage is None:
-
-                current_gpu_counter = \
-                    self.get_gpu_stats_counter()
-
-                gpu_usage = \
-                    self.calculate_gpu_usage(
-                        previous_gpu_counter,
-                        current_gpu_counter,
-                        elapsed
-                    )
-
-                previous_gpu_counter = \
-                    current_gpu_counter
+            previous_gpu_counter = \
+                current_gpu_counter
 
 
             # ==================================================
-            # 현재 구간
+            # Phase
             # ==================================================
 
             phase = self.get_phase()
 
 
-            # ==================================================
-            # 데이터 저장
-            # ==================================================
-
             with self.lock:
 
                 self.stats[
                     phase
-                ]["cpu"].append(
+                ][
+                    "cpu"
+                ].append(
                     cpu_usage
                 )
 
+
                 self.stats[
                     phase
-                ]["ram"].append(
+                ][
+                    "ram"
+                ].append(
                     ram_usage
                 )
+
 
                 if gpu_usage is not None:
 
                     self.stats[
                         phase
-                    ]["gpu"].append(
+                    ][
+                        "gpu"
+                    ].append(
                         gpu_usage
                     )
 
 
     # ======================================================
-    # 시작
+    # Start
     # ======================================================
 
     def start(self):
-
-        if self.running:
-
-            return
-
-        print(
-            "\n[Resource Monitor]"
-        )
-
-        print(
-            "CPU / RAM / GPU monitoring started"
-        )
-
-        print(
-            f"Sampling interval : "
-            f"{self.sample_interval:.1f} sec"
-        )
 
         self.running = True
 
@@ -461,16 +415,13 @@ class ResourceMonitor:
 
 
     # ======================================================
-    # 종료
+    # Stop
     # ======================================================
 
     def stop(self):
 
-        if not self.running:
-
-            return
-
         self.running = False
+
 
         if self.thread is not None:
 
@@ -480,14 +431,18 @@ class ResourceMonitor:
 
 
     # ======================================================
-    # 평균 계산
+    # 평균값
     # ======================================================
 
-    def average(self, values):
+    def average(
+        self,
+        values
+    ):
 
         if not values:
 
             return None
+
 
         return (
             sum(values)
@@ -497,7 +452,7 @@ class ResourceMonitor:
 
 
     # ======================================================
-    # 결과 출력
+    # Summary
     # ======================================================
 
     def print_summary(self):
@@ -508,7 +463,7 @@ class ResourceMonitor:
         )
 
         print(
-            "       Raspberry Pi Resource Usage Summary"
+            "        Resource Usage Summary"
         )
 
         print(
@@ -516,75 +471,43 @@ class ResourceMonitor:
         )
 
 
-        phase_names = {
-
-            "IDLE":
-                "평시 (녹화 X / 모션 감지)",
-
-            "RECORDING":
-                "녹화중",
-
-            "INFERENCE":
-                "추론중"
-        }
-
-
         for phase in [
-
             "IDLE",
             "RECORDING",
             "INFERENCE"
-
         ]:
 
-            with self.lock:
-
-                cpu_values = list(
-                    self.stats[
-                        phase
-                    ]["cpu"]
-                )
-
-                ram_values = list(
-                    self.stats[
-                        phase
-                    ]["ram"]
-                )
-
-                gpu_values = list(
-                    self.stats[
-                        phase
-                    ]["gpu"]
-                )
-
-
             cpu_avg = self.average(
-                cpu_values
+                self.stats[
+                    phase
+                ][
+                    "cpu"
+                ]
             )
+
 
             ram_avg = self.average(
-                ram_values
+                self.stats[
+                    phase
+                ][
+                    "ram"
+                ]
             )
+
 
             gpu_avg = self.average(
-                gpu_values
+                self.stats[
+                    phase
+                ][
+                    "gpu"
+                ]
             )
 
 
             print(
-                "\n"
-                f"[{phase_names[phase]}]"
+                f"\n[{phase}]"
             )
 
-            print(
-                f"  Samples : "
-                f"{len(cpu_values)}"
-            )
-
-
-            # --------------------------------------------------
-            # CPU
-            # --------------------------------------------------
 
             if cpu_avg is not None:
 
@@ -600,10 +523,6 @@ class ResourceMonitor:
                 )
 
 
-            # --------------------------------------------------
-            # RAM
-            # --------------------------------------------------
-
             if ram_avg is not None:
 
                 print(
@@ -617,10 +536,6 @@ class ResourceMonitor:
                     "  RAM 평균 : N/A"
                 )
 
-
-            # --------------------------------------------------
-            # GPU
-            # --------------------------------------------------
 
             if gpu_avg is not None:
 
@@ -651,10 +566,13 @@ class ResourceMonitor:
 
 
 # ==========================================================
-# Camera 설정
+# Camera
 # ==========================================================
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(
+    0
+)
+
 
 cap.set(
     cv2.CAP_PROP_FRAME_WIDTH,
@@ -666,6 +584,7 @@ cap.set(
     480
 )
 
+
 cap.set(
     cv2.CAP_PROP_FOURCC,
     cv2.VideoWriter_fourcc(
@@ -675,6 +594,7 @@ cap.set(
         'G'
     )
 )
+
 
 cap.set(
     cv2.CAP_PROP_BUFFERSIZE,
@@ -704,45 +624,16 @@ recorder = MotionRecorder(
 
 
 # ==========================================================
-# Box Check Queue
+# Queue
 # ==========================================================
 
 box_check_queue = Queue()
-
-
-# ==========================================================
-# Box Result Queue
-# ==========================================================
 
 box_result_queue = Queue()
 
 
 # ==========================================================
-# 현재 화면에 표시할 Box 정보
-# ==========================================================
-#
-# 기존:
-#
-# current_bbox
-# current_confidence
-# current_damaged
-# current_damage_confidence
-#
-# 여러 Box를 처리하기 위해 리스트로 변경
-#
-# current_boxes = [
-#
-#     {
-#         "bbox": (...),
-#         "confidence": ...,
-#         "damaged": ...,
-#         "damage_confidence": ...,
-#         "damage_class_id": ...
-#     },
-#
-#     ...
-# ]
-#
+# 현재 화면에 표시할 Box
 # ==========================================================
 
 current_boxes = []
@@ -769,6 +660,10 @@ def box_check_worker():
     )
 
 
+    # ======================================================
+    # Box Checker
+    # ======================================================
+
     box_checker = BoxVideoChecker(
 
         box_class_id=0,
@@ -792,7 +687,7 @@ def box_check_worker():
 
 
         # ==================================================
-        # 종료 요청
+        # 종료
         # ==================================================
 
         if video_path is None:
@@ -807,7 +702,12 @@ def box_check_worker():
 
 
         print(
-            "\n[Box Thread]"
+            "\n"
+            + "=" * 60
+        )
+
+        print(
+            "[Box Thread]"
         )
 
         print(
@@ -815,7 +715,11 @@ def box_check_worker():
         )
 
         print(
-            f"Video: {video_path}"
+            f"Video : {video_path}"
+        )
+
+        print(
+            "=" * 60
         )
 
 
@@ -837,6 +741,7 @@ def box_check_worker():
                     video_path
                 )
 
+
         except Exception as e:
 
             print(
@@ -847,10 +752,6 @@ def box_check_worker():
                 f"{type(e).__name__}: {e}"
             )
 
-            # --------------------------------------------------
-            # 오류 발생 시에도 Main Thread가
-            # 대기하지 않도록 결과 전달
-            # --------------------------------------------------
 
             result = {
 
@@ -865,11 +766,15 @@ def box_check_worker():
             inference_end_time = \
                 time.time()
 
+
             inference_elapsed = (
+
                 inference_end_time
                 -
                 inference_start_time
+
             )
+
 
             inference_active = False
 
@@ -885,10 +790,13 @@ def box_check_worker():
 
 
         # ==================================================
-        # 최종 결과 출력
+        # 최종 결과
         # ==================================================
 
-        if result.get("detected", False):
+        if result.get(
+            "detected",
+            False
+        ):
 
             boxes = result.get(
                 "boxes",
@@ -897,71 +805,82 @@ def box_check_worker():
 
 
             print(
-                "\n================================"
+                "\n"
+                + "=" * 50
             )
 
             print(
-                f"Final result: "
+                f"Final result : "
                 f"{len(boxes)} BOX DETECTED"
             )
 
 
-            # --------------------------------------------------
+            # ==================================================
             # 각각의 Box 결과 출력
-            # --------------------------------------------------
+            # ==================================================
 
-            for index, box in enumerate(
-                boxes,
-                start=1
-            ):
+            for box in boxes:
 
-                print(
-                    f"\n[BOX {index}]"
+                box_id = box.get(
+                    "box_id",
+                    0
                 )
 
+
                 print(
-                    f"  BBox: "
+                    f"\n[BOX {box_id}]"
+                )
+
+
+                print(
+                    f"  BBox : "
                     f"{box.get('bbox')}"
                 )
 
-                print(
-                    f"  Confidence: "
-                    f"{box.get('confidence', 0.0):.2f}"
-                )
 
                 print(
-                    f"  Damaged: "
+                    f"  Confidence : "
+                    f"{box.get('confidence', 0.0):.3f}"
+                )
+
+
+                print(
+                    f"  Damaged : "
                     f"{box.get('damaged', False)}"
                 )
 
-                print(
-                    f"  Damage confidence: "
-                    f"{box.get('damage_confidence', 0.0):.2f}"
-                )
 
                 print(
-                    f"  Damage class ID: "
+                    f"  Damage confidence : "
+                    f"{box.get('damage_confidence', 0.0):.3f}"
+                )
+
+
+                print(
+                    f"  Damage class ID : "
                     f"{box.get('damage_class_id', -1)}"
                 )
 
 
             print(
-                "\n================================"
+                "\n"
+                + "=" * 50
             )
 
 
         else:
 
             print(
-                "\n================================"
+                "\n"
+                + "=" * 50
             )
 
             print(
-                "Final result: NO BOX"
+                "Final result : NO BOX"
             )
 
             print(
-                "================================"
+                "=" * 50
             )
 
 
@@ -978,8 +897,7 @@ def box_check_worker():
 
 
     # ======================================================
-    # Box Thread 종료 직전
-    # Damage Timing 최종 통계
+    # Damage Timing Summary
     # ======================================================
 
     print(
@@ -988,7 +906,7 @@ def box_check_worker():
     )
 
     print(
-        "       Damage Detection Timing Summary"
+        "Damage Detection Timing Summary"
     )
 
     print(
@@ -1012,15 +930,18 @@ def box_check_worker():
             "\n[Damage Model 자체 추론시간]"
         )
 
+
         print(
             f"  평균 : "
             f"{damage_timing['average_ms']:.2f} ms"
         )
 
+
         print(
             f"  최소 : "
             f"{damage_timing['min_ms']:.2f} ms"
         )
+
 
         print(
             f"  최대 : "
@@ -1032,20 +953,24 @@ def box_check_worker():
             "\n[Box → Damage 전체 처리시간]"
         )
 
+
         print(
             f"  평균 : "
             f"{damage_timing['box_to_damage_average_ms']:.2f} ms"
         )
+
 
         print(
             f"  최소 : "
             f"{damage_timing['box_to_damage_min_ms']:.2f} ms"
         )
 
+
         print(
             f"  최대 : "
             f"{damage_timing['box_to_damage_max_ms']:.2f} ms"
         )
+
 
     else:
 
@@ -1061,7 +986,7 @@ def box_check_worker():
 
 
 # ==========================================================
-# Box Check Thread 시작
+# Box Thread 시작
 # ==========================================================
 
 box_thread = Thread(
@@ -1071,11 +996,12 @@ box_thread = Thread(
     daemon=True
 )
 
+
 box_thread.start()
 
 
 # ==========================================================
-# Resource Monitor 시작
+# Resource Monitor
 # ==========================================================
 
 resource_monitor = ResourceMonitor(
@@ -1087,6 +1013,7 @@ resource_monitor = ResourceMonitor(
 
     sample_interval=0.5
 )
+
 
 resource_monitor.start()
 
@@ -1100,6 +1027,7 @@ cv2.namedWindow(
     cv2.WINDOW_NORMAL
 )
 
+
 cv2.resizeWindow(
     "cam",
     360,
@@ -1108,7 +1036,7 @@ cv2.resizeWindow(
 
 
 # ==========================================================
-# 시작 메시지
+# 시작
 # ==========================================================
 
 print(
@@ -1138,11 +1066,9 @@ print(
 
 try:
 
-    # ======================================================
-    # FPS 측정
-    # ======================================================
+    fps_start_time = \
+        time.time()
 
-    fps_start_time = time.time()
 
     fps_frame_count = 0
 
@@ -1152,27 +1078,35 @@ try:
     while True:
 
         # ==================================================
-        # FPS 계산
+        # FPS
         # ==================================================
 
         fps_frame_count += 1
 
-        current_time = time.time()
+
+        current_time = \
+            time.time()
+
 
         elapsed = (
+
             current_time
             -
             fps_start_time
+
         )
 
 
         if elapsed >= 1.0:
 
             display_fps = (
+
                 fps_frame_count
                 /
                 elapsed
+
             )
+
 
             fps_frame_count = 0
 
@@ -1181,7 +1115,7 @@ try:
 
 
         # ==================================================
-        # Camera Frame 읽기
+        # Camera Frame
         # ==================================================
 
         ret, frame = \
@@ -1198,7 +1132,7 @@ try:
 
 
         # ==================================================
-        # Motion Detection
+        # Motion Detection / Recording
         # ==================================================
 
         video_path = \
@@ -1208,7 +1142,7 @@ try:
 
 
         # ==================================================
-        # Box + Damage 검사 결과 확인
+        # Box 검사 결과
         # ==================================================
 
         try:
@@ -1228,15 +1162,17 @@ try:
                     False
                 ):
 
-                    # --------------------------------------------------
-                    # 모든 Box 저장
-                    # --------------------------------------------------
-
                     current_boxes = \
                         result.get(
                             "boxes",
                             []
                         )
+
+
+                    print(
+                        "\n[Display] "
+                        f"{len(current_boxes)}개 Box 결과 수신"
+                    )
 
 
                 # ==================================================
@@ -1257,42 +1193,29 @@ try:
 
 
         # ==================================================
-        # Main 화면에 모든 BBox 그리기
+        # 화면에 Box 표시
         # ==================================================
 
-        for index, box in enumerate(
-            current_boxes,
-            start=1
-        ):
+        for box in current_boxes:
 
             # --------------------------------------------------
-            # Box 정보 가져오기
+            # Box ID
+            # --------------------------------------------------
+
+            box_id = box.get(
+                "box_id",
+                0
+            )
+
+
+            # --------------------------------------------------
+            # BBox
             # --------------------------------------------------
 
             bbox = box.get(
                 "bbox"
             )
 
-            confidence = box.get(
-                "confidence",
-                0.0
-            )
-
-            damaged = box.get(
-                "damaged",
-                False
-            )
-
-            damage_confidence = \
-                box.get(
-                    "damage_confidence",
-                    0.0
-                )
-
-
-            # --------------------------------------------------
-            # BBox가 없는 경우
-            # --------------------------------------------------
 
             if bbox is None:
 
@@ -1302,13 +1225,40 @@ try:
             x1, y1, x2, y2 = bbox
 
 
+            # --------------------------------------------------
+            # Confidence
+            # --------------------------------------------------
+
+            confidence = float(
+                box.get(
+                    "confidence",
+                    0.0
+                )
+            )
+
+
+            # --------------------------------------------------
+            # Damage
+            # --------------------------------------------------
+
+            damaged = bool(
+                box.get(
+                    "damaged",
+                    False
+                )
+            )
+
+
+            damage_confidence = float(
+                box.get(
+                    "damage_confidence",
+                    0.0
+                )
+            )
+
+
             # ==================================================
-            # Bounding Box 색상
-            # ==================================================
-            #
-            # 정상  → 초록색
-            # 손상  → 빨간색
-            #
+            # 색상
             # ==================================================
 
             if damaged:
@@ -1347,20 +1297,16 @@ try:
 
 
             # ==================================================
-            # Box 번호 + Confidence
+            # Box Label
             # ==================================================
 
             box_label = (
 
-                f"BOX {index} "
+                f"BOX {box_id} "
 
                 f"{confidence * 100:.1f}%"
             )
 
-
-            # --------------------------------------------------
-            # Box Label 위치
-            # --------------------------------------------------
 
             label_y = max(
                 y1 - 8,
@@ -1390,7 +1336,7 @@ try:
 
 
             # ==================================================
-            # Damage 상태
+            # Damage Label
             # ==================================================
 
             if damaged:
@@ -1413,12 +1359,16 @@ try:
 
 
             # --------------------------------------------------
-            # Damage Label 위치
+            # 화면 하단을 넘지 않도록 처리
             # --------------------------------------------------
+
+            frame_height = \
+                frame.shape[0]
+
 
             damage_y = min(
                 y2 + 20,
-                470
+                frame_height - 10
             )
 
 
@@ -1444,31 +1394,7 @@ try:
 
 
         # ==================================================
-        # 검출된 Box 개수 표시
-        # ==================================================
-
-        # if current_boxes:
-
-        #     cv2.putText(
-
-        #         frame,
-
-        #         f"Boxes: {len(current_boxes)}",
-
-        #         (10, 25),
-
-        #         cv2.FONT_HERSHEY_SIMPLEX,
-
-        #         0.55,
-
-        #         (255, 255, 255),
-
-        #         2
-        #     )
-
-
-        # ==================================================
-        # Recorder 상태 표시
+        # Recorder 상태
         # ==================================================
 
         frame = recorder.draw_status(
@@ -1477,7 +1403,7 @@ try:
 
 
         # ==================================================
-        # FPS 표시
+        # FPS
         # ==================================================
 
         cv2.putText(
@@ -1509,7 +1435,7 @@ try:
 
 
         # ==================================================
-        # 저장 완료된 영상 확인
+        # 영상 저장 완료
         # ==================================================
 
         if video_path is not None:
@@ -1523,17 +1449,13 @@ try:
             )
 
             print(
-                f"Video: {video_path}"
+                f"Video : {video_path}"
             )
 
             print(
                 "Box 검사 Thread로 전달"
             )
 
-
-            # --------------------------------------------------
-            # 영상 경로를 Box Thread로 전달
-            # --------------------------------------------------
 
             box_check_queue.put(
                 video_path
@@ -1544,7 +1466,9 @@ try:
         # 키 입력
         # ==================================================
 
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(
+            1
+        ) & 0xFF
 
 
         if key == ord("s"):
@@ -1557,7 +1481,7 @@ try:
 
 
 # ==========================================================
-# 프로그램 종료
+# 종료
 # ==========================================================
 
 finally:
@@ -1567,47 +1491,47 @@ finally:
     )
 
 
-    # ------------------------------------------------------
-    # MotionRecorder 종료
-    # ------------------------------------------------------
+    # ======================================================
+    # Recorder
+    # ======================================================
 
     recorder.release()
 
 
-    # ------------------------------------------------------
+    # ======================================================
     # Box Thread 종료 요청
-    # ------------------------------------------------------
+    # ======================================================
 
     box_check_queue.put(
         None
     )
 
 
-    # ------------------------------------------------------
+    # ======================================================
     # Box Thread 종료 대기
-    # ------------------------------------------------------
+    # ======================================================
 
     box_thread.join(
         timeout=5
     )
 
 
-    # ------------------------------------------------------
-    # Resource Monitor 종료
-    # ------------------------------------------------------
+    # ======================================================
+    # Resource Monitor
+    # ======================================================
 
     resource_monitor.stop()
 
 
-    # ------------------------------------------------------
-    # OpenCV 종료
-    # ------------------------------------------------------
+    # ======================================================
+    # OpenCV
+    # ======================================================
 
     cv2.destroyAllWindows()
 
 
     # ======================================================
-    # 최종 Resource 사용량 출력
+    # Resource Summary
     # ======================================================
 
     resource_monitor.print_summary()
