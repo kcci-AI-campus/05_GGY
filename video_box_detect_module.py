@@ -41,7 +41,7 @@ class BoxVideoChecker:
         # ------------------------------------------
 
         self.damage_model = DamageDetector(
-            model_path="damage_detect_float32.tflite",
+            model_path="damage_detect_v2_float32.tflite",
             damaged_class_id=0,
             confidence_threshold=damage_confidence_threshold
         )
