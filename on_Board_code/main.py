@@ -43,19 +43,22 @@ class ResourceMonitor:
             "IDLE": {
                 "cpu": [],
                 "ram": [],
-                "gpu": []
+                "gpu": [],
+                "cpu_per_core": []
             },
 
             "RECORDING": {
                 "cpu": [],
                 "ram": [],
-                "gpu": []
+                "gpu": [],
+                "cpu_per_core": []
             },
 
             "INFERENCE": {
                 "cpu": [],
                 "ram": [],
-                "gpu": []
+                "gpu": [],
+                "cpu_per_core": []
             }
         }
 
@@ -77,7 +80,6 @@ class ResourceMonitor:
             "/sys/class/devfreq/1f0000.gpu/utilization"
         ]
 
-
         for path in paths:
 
             try:
@@ -86,7 +88,6 @@ class ResourceMonitor:
 
                     continue
 
-
                 with open(
                     path,
                     "r"
@@ -94,19 +95,16 @@ class ResourceMonitor:
 
                     value = f.read().strip()
 
-
                 match = re.search(
                     r"(\d+(?:\.\d+)?)",
                     value
                 )
-
 
                 if match:
 
                     gpu = float(
                         match.group(1)
                     )
-
 
                     gpu = max(
                         0.0,
@@ -115,7 +113,6 @@ class ResourceMonitor:
                             100.0
                         )
                     )
-
 
                     if not self.gpu_source_printed:
 
@@ -126,14 +123,11 @@ class ResourceMonitor:
 
                         self.gpu_source_printed = True
 
-
                     return gpu
-
 
             except Exception:
 
                 pass
-
 
         return None
 
@@ -151,7 +145,6 @@ class ResourceMonitor:
             "/sys/devices/platform/v3dbus/fec00000.v3d/gpu_stats"
         ]
 
-
         for path in paths:
 
             try:
@@ -160,7 +153,6 @@ class ResourceMonitor:
 
                     continue
 
-
                 with open(
                     path,
                     "r"
@@ -168,12 +160,10 @@ class ResourceMonitor:
 
                     text = f.read()
 
-
                 values = re.findall(
                     r"drm-engine-[^:]+:\s*([0-9]+)",
                     text
                 )
-
 
                 if values:
 
@@ -181,7 +171,6 @@ class ResourceMonitor:
                         int(v)
                         for v in values
                     )
-
 
                     if not self.gpu_source_printed:
 
@@ -192,14 +181,11 @@ class ResourceMonitor:
 
                         self.gpu_source_printed = True
 
-
                     return total
-
 
             except Exception:
 
                 pass
-
 
         return None
 
@@ -225,18 +211,15 @@ class ResourceMonitor:
 
             return None
 
-
         delta = (
             current_counter
             -
             previous_counter
         )
 
-
         if delta < 0:
 
             return None
-
 
         elapsed_ns = (
             elapsed_time
@@ -244,13 +227,11 @@ class ResourceMonitor:
             1_000_000_000
         )
 
-
         gpu_usage = (
             delta
             /
             elapsed_ns
         ) * 100.0
-
 
         return max(
             0.0,
@@ -262,7 +243,7 @@ class ResourceMonitor:
 
 
     # ======================================================
-    # 현재 phase
+    # 현재 Phase
     # ======================================================
 
     def get_phase(self):
@@ -290,16 +271,25 @@ class ResourceMonitor:
 
     def _monitor_worker(self):
 
+        # --------------------------------------------------
+        # psutil 첫 측정값 초기화
+        # --------------------------------------------------
+
         psutil.cpu_percent(
             interval=None
+        )
+
+        psutil.cpu_percent(
+            interval=None,
+            percpu=True
         )
 
 
         previous_gpu_counter = \
             self.get_gpu_stats_counter()
 
-
-        previous_time = time.time()
+        previous_time = \
+            time.time()
 
 
         while self.running:
@@ -309,7 +299,8 @@ class ResourceMonitor:
             )
 
 
-            current_time = time.time()
+            current_time = \
+                time.time()
 
 
             elapsed = (
@@ -324,11 +315,21 @@ class ResourceMonitor:
 
 
             # ==================================================
-            # CPU
+            # 전체 CPU 사용률
             # ==================================================
 
             cpu_usage = psutil.cpu_percent(
                 interval=None
+            )
+
+
+            # ==================================================
+            # CPU 코어별 사용률
+            # ==================================================
+
+            cpu_per_core = psutil.cpu_percent(
+                interval=None,
+                percpu=True
             )
 
 
@@ -387,6 +388,15 @@ class ResourceMonitor:
                 )
 
 
+                self.stats[
+                    phase
+                ][
+                    "cpu_per_core"
+                ].append(
+                    cpu_per_core
+                )
+
+
                 if gpu_usage is not None:
 
                     self.stats[
@@ -422,7 +432,6 @@ class ResourceMonitor:
 
         self.running = False
 
-
         if self.thread is not None:
 
             self.thread.join(
@@ -431,7 +440,7 @@ class ResourceMonitor:
 
 
     # ======================================================
-    # 평균값
+    # 평균
     # ======================================================
 
     def average(
@@ -443,12 +452,27 @@ class ResourceMonitor:
 
             return None
 
-
         return (
             sum(values)
             /
             len(values)
         )
+
+
+    # ======================================================
+    # 최대값
+    # ======================================================
+
+    def maximum(
+        self,
+        values
+    ):
+
+        if not values:
+
+            return None
+
+        return max(values)
 
 
     # ======================================================
@@ -477,30 +501,55 @@ class ResourceMonitor:
             "INFERENCE"
         ]:
 
-            cpu_avg = self.average(
+            cpu_values = \
                 self.stats[
                     phase
                 ][
                     "cpu"
                 ]
-            )
 
 
-            ram_avg = self.average(
+            ram_values = \
                 self.stats[
                     phase
                 ][
                     "ram"
                 ]
-            )
 
 
-            gpu_avg = self.average(
+            gpu_values = \
                 self.stats[
                     phase
                 ][
                     "gpu"
                 ]
+
+
+            core_values = \
+                self.stats[
+                    phase
+                ][
+                    "cpu_per_core"
+                ]
+
+
+            cpu_avg = self.average(
+                cpu_values
+            )
+
+
+            cpu_max = self.maximum(
+                cpu_values
+            )
+
+
+            ram_avg = self.average(
+                ram_values
+            )
+
+
+            gpu_avg = self.average(
+                gpu_values
             )
 
 
@@ -509,11 +558,20 @@ class ResourceMonitor:
             )
 
 
+            # --------------------------------------------------
+            # 전체 CPU
+            # --------------------------------------------------
+
             if cpu_avg is not None:
 
                 print(
                     f"  CPU 평균 : "
                     f"{cpu_avg:.1f}%"
+                )
+
+                print(
+                    f"  CPU 최대 : "
+                    f"{cpu_max:.1f}%"
                 )
 
             else:
@@ -522,6 +580,81 @@ class ResourceMonitor:
                     "  CPU 평균 : N/A"
                 )
 
+                print(
+                    "  CPU 최대 : N/A"
+                )
+
+
+            # --------------------------------------------------
+            # CPU Core
+            # --------------------------------------------------
+
+            if core_values:
+
+                core_count = len(
+                    core_values[0]
+                )
+
+
+                core_avg = [
+
+                    self.average(
+                        [
+                            sample[i]
+                            for sample in core_values
+                        ]
+                    )
+
+                    for i in range(
+                        core_count
+                    )
+                ]
+
+
+                core_max = [
+
+                    self.maximum(
+                        [
+                            sample[i]
+                            for sample in core_values
+                        ]
+                    )
+
+                    for i in range(
+                        core_count
+                    )
+                ]
+
+
+                print(
+                    "  CPU Core 평균 : "
+                    +
+                    ", ".join(
+                        f"{value:.1f}%"
+                        for value in core_avg
+                    )
+                )
+
+
+                print(
+                    "  CPU Core 최대 : "
+                    +
+                    ", ".join(
+                        f"{value:.1f}%"
+                        for value in core_max
+                    )
+                )
+
+            else:
+
+                print(
+                    "  CPU Core : N/A"
+                )
+
+
+            # --------------------------------------------------
+            # RAM
+            # --------------------------------------------------
 
             if ram_avg is not None:
 
@@ -536,6 +669,10 @@ class ResourceMonitor:
                     "  RAM 평균 : N/A"
                 )
 
+
+            # --------------------------------------------------
+            # GPU
+            # --------------------------------------------------
 
             if gpu_avg is not None:
 
