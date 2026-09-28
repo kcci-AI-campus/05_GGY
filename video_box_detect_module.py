@@ -13,7 +13,7 @@ class BoxVideoChecker:
     def __init__(
         self,
         box_class_id=0,
-        confidence_threshold=0.4,
+        confidence_threshold=0.5,
         check_seconds=3,
         detect_frame_count=5,
         frame_interval=3,
