@@ -676,7 +676,7 @@ def box_check_worker():
 
         frame_interval=3,
 
-        damage_confidence_threshold=0.5
+        damage_threshold=0.4
     )
 
 
@@ -1030,8 +1030,8 @@ cv2.namedWindow(
 
 cv2.resizeWindow(
     "cam",
-    360,
-    300
+    # 360,300
+    640,480
 )
 
 

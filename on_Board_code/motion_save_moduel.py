@@ -332,13 +332,6 @@ class MotionRecorder:
         if not self.recording:
             return
 
-        print(
-            "\n[Motion stopped]"
-        )
-
-        print(
-            "Recording 종료 요청"
-        )
 
         # --------------------------------------------------
         # recording=False

@@ -11,20 +11,22 @@ class DamageDetector:
         self,
         model_path="damage_detect_v2_float32.tflite",
         damaged_class_id=0,
-        confidence_threshold=0.5
+        damage_threshold=0.5
     ):
 
         self.model_path = model_path
 
-        self.damaged_class_id = \
-            damaged_class_id
+        # 현재 모델에서
+        # class 0 = damaged
+        self.damaged_class_id = damaged_class_id
 
-        self.confidence_threshold = \
-            confidence_threshold
+        # class 0의 확률이 이 값 이상이면
+        # DAMAGE로 판정
+        self.damage_threshold = damage_threshold
 
-        # --------------------------------------------------
+        # ==================================================
         # TFLite Interpreter
-        # --------------------------------------------------
+        # ==================================================
 
         self.interpreter = tflite.Interpreter(
             model_path=self.model_path
@@ -32,9 +34,9 @@ class DamageDetector:
 
         self.interpreter.allocate_tensors()
 
-        # --------------------------------------------------
+        # ==================================================
         # Input / Output 정보
-        # --------------------------------------------------
+        # ==================================================
 
         self.input_details = \
             self.interpreter.get_input_details()
@@ -57,13 +59,23 @@ class DamageDetector:
         print("\n[DamageDetector]")
 
         print(
-            f"Model       : "
+            f"Model            : "
             f"{self.model_path}"
         )
 
         print(
-            f"Input shape : "
+            f"Input shape      : "
             f"{input_shape}"
+        )
+
+        print(
+            f"Damaged class ID  : "
+            f"{self.damaged_class_id}"
+        )
+
+        print(
+            f"Damage threshold  : "
+            f"{self.damage_threshold:.2f}"
         )
 
         for i, output in enumerate(
@@ -144,7 +156,7 @@ class DamageDetector:
     ):
 
         # --------------------------------------------------
-        # Overflow 방지를 위해 최댓값을 빼준다.
+        # Overflow 방지
         # --------------------------------------------------
 
         values = values - np.max(
@@ -182,8 +194,11 @@ class DamageDetector:
             return {
                 "damaged": False,
                 "confidence": 0.0,
+                "damage_score": 0.0,
+                "normal_score": 0.0,
                 "class_id": None
             }
+
 
         # --------------------------------------------------
         # 전처리
@@ -192,6 +207,7 @@ class DamageDetector:
         input_data = self.preprocess(
             frame
         )
+
 
         # --------------------------------------------------
         # Input 설정
@@ -202,11 +218,13 @@ class DamageDetector:
             input_data
         )
 
+
         # --------------------------------------------------
         # 추론
         # --------------------------------------------------
 
         self.interpreter.invoke()
+
 
         # --------------------------------------------------
         # Output 가져오기
@@ -220,48 +238,36 @@ class DamageDetector:
             output
         )
 
+
         # --------------------------------------------------
-        # Raw output 확인
+        # Raw output 출력
         # --------------------------------------------------
 
         print(
-            f"Raw output: {output}"
+            f"Raw output : {output}"
         )
 
         print(
-            f"Output shape: {output.shape}"
+            f"Output shape : {output.shape}"
         )
+
 
         # ==================================================
         # 2-Class classification
         # ==================================================
 
-        if output.ndim == 1 and len(output) == 2:
+        if (
+            output.ndim == 1
+            and
+            len(output) == 2
+        ):
 
             # --------------------------------------------------
-            # Logits → Probability
+            # Raw logits → probability
             # --------------------------------------------------
 
             probabilities = self.softmax(
                 output
-            )
-
-            # --------------------------------------------------
-            # 가장 높은 확률의 class 선택
-            # --------------------------------------------------
-
-            class_id = int(
-                np.argmax(
-                    probabilities
-                )
-            )
-
-            # --------------------------------------------------
-            # 선택된 class의 확률
-            # --------------------------------------------------
-
-            confidence = float(
-                probabilities[class_id]
             )
 
         else:
@@ -271,26 +277,69 @@ class DamageDetector:
                 f"Output shape: {output.shape}"
             )
 
+
         # ==================================================
-        # Damage 여부
+        # 각 클래스 확률
         # ==================================================
 
-        damaged = (
-
-            class_id
-            ==
-            self.damaged_class_id
-
-            and
-
-            confidence
-            >=
-            self.confidence_threshold
+        damage_score = float(
+            probabilities[
+                self.damaged_class_id
+            ]
         )
 
-        # --------------------------------------------------
+
+        # 현재 모델은
+        # class 0 = damage
+        # class 1 = normal
+        #
+        # 따라서 class 1의 점수는 다음과 같이 가져온다.
+
+        normal_class_id = 1
+
+        normal_score = float(
+            probabilities[
+                normal_class_id
+            ]
+        )
+
+
+        # ==================================================
+        # Damage Threshold 판정
+        # ==================================================
+
+        # 중요:
+        #
+        # 기존:
+        #   가장 높은 class를 선택
+        #
+        # 변경:
+        #   class 0의 점수가 threshold 이상이면
+        #   무조건 class 0 = DAMAGE
+        #
+        #   threshold 미만이면
+        #   class 1 = NORMAL
+
+        if damage_score >= self.damage_threshold:
+
+            class_id = self.damaged_class_id
+
+            damaged = True
+
+            confidence = damage_score
+
+        else:
+
+            class_id = normal_class_id
+
+            damaged = False
+
+            confidence = normal_score
+
+
+        # ==================================================
         # 결과 출력
-        # --------------------------------------------------
+        # ==================================================
 
         print(
             f"Class 0 probability : "
@@ -303,24 +352,62 @@ class DamageDetector:
         )
 
         print(
+            f"Damage threshold    : "
+            f"{self.damage_threshold:.4f}"
+        )
+
+        print(
+            f"Damage score        : "
+            f"{damage_score:.4f}"
+        )
+
+        print(
+            f"Normal score        : "
+            f"{normal_score:.4f}"
+        )
+
+        print(
             f"Predicted class     : "
             f"{class_id}"
         )
 
         print(
-            f"Confidence           : "
+            f"Confidence          : "
             f"{confidence:.4f}"
         )
 
         print(
-            f"Damaged              : "
+            f"Damaged             : "
             f"{damaged}"
         )
 
+
+        # ==================================================
+        # 결과 반환
+        # ==================================================
+
         return {
-            "damaged": damaged,
-            "confidence": confidence,
-            "class_id": class_id
+
+            # 최종 DAMAGE 여부
+            "damaged":
+                damaged,
+
+            # 최종 선택된 클래스의 점수
+            "confidence":
+                confidence,
+
+            # 중요:
+            # class 0의 실제 점수
+            "damage_score":
+                damage_score,
+
+            # class 1의 점수
+            "normal_score":
+                normal_score,
+
+            # 최종 판정 class
+            "class_id":
+                class_id
         }
 
 
@@ -336,5 +423,3 @@ class DamageDetector:
         return self.predict(
             frame
         )
-
-
