@@ -38,7 +38,6 @@ class MotionRecorder:
         os.makedirs(self.save_dir, exist_ok=True)  #영상을 저장할 폴더를 생성
 
 
-
         # --------------------------------------------------
         # Motion Detection
         # --------------------------------------------------
@@ -162,9 +161,6 @@ class MotionRecorder:
         save_path
     ):
 
-        print("\n[Recording Thread]")
-        print("VideoWriter 시작")
-        print(f"Save path : {save_path}")
 
         #영상인코딩 방식을 카메라와 동일 하게 MJPG로 설정
         fourcc = cv2.VideoWriter_fourcc(
@@ -187,7 +183,6 @@ class MotionRecorder:
 
             print("\n[ERROR]")
             print("VideoWriter를 열 수 없습니다.")
-            print(f"Save path : {save_path}")
 
             self.saving = False
 
@@ -237,7 +232,6 @@ class MotionRecorder:
 
         self.saving = False
 
-        print("\n[Recording Thread]")
         print("VideoWriter 종료")
         print(f"Video saved : {save_path}")
 
@@ -312,7 +306,6 @@ class MotionRecorder:
 
         self.recording_thread.start()
 
-        print("\n[Motion detected]")
 
         print(
             f"Saving previous "

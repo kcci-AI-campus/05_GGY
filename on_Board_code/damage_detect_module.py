@@ -56,7 +56,6 @@ class DamageDetector:
         self.input_channels = \
             int(input_shape[3])
 
-        print("\n[DamageDetector]")
 
         print(
             f"Model            : "
