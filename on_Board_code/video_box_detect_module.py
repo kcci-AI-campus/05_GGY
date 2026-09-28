@@ -15,7 +15,7 @@ class BoxVideoChecker:
         self,
         box_class_id=0,
         confidence_threshold=0.4,
-        check_seconds=3,
+        check_seconds=1,
         detect_frame_count=5,
         frame_interval=3,
         damage_threshold=0.5
@@ -259,9 +259,9 @@ class BoxVideoChecker:
 
 
         # ==================================================
-        # 마지막 3초 검사
+        # 마지막 1초 검사
         #
-        # 영상이 3초보다 짧으면
+        # 영상이 1초보다 짧으면
         # 전체 영상을 검사
         # ==================================================
 
